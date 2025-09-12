@@ -1,24 +1,5 @@
 import { writable } from 'svelte/store';
-export const scoreboard = writable<Record<string, number>>({});
-
-export type OwnedCard = {card: Card, player: Player };
-
-export type Card = {
-  suit: string;
-  value: string;
-  id: string;
-};
-
-export type Player = {
-  name: string;
-  avatar1: string;
-  avatar2: string;
-  selectedAvatar?: string;
-  inGameAvatar?: string;
-  hand: OwnedCard[];
-  tricksWon: number;
-  socketId?: string;
-};
+import type { Player, GameState } from '../shared/types';
 
 export const players = writable<Player[]>([
   { name: 'Angela', avatar1: '/avatars/angela_1.png', avatar2: '/avatars/angela_2.png', hand: [], tricksWon: 0 },
@@ -29,18 +10,5 @@ export const players = writable<Player[]>([
   { name: 'Tony', avatar1: '/avatars/tony_1.png', avatar2: '/avatars/tony_2.png', hand: [], tricksWon: 0 },
 ]);
 
-export const winner = writable<Player | null>(null);
-export const gameStage = writable<'lobby' | 'playing' | 'winner'>('lobby');
-
-export type TrickPlay = { playerId: string; card: Card };
-
-export type GameState = {
-  roomId: string;
-  players: Player[];
-  currentTrick: OwnedCard[];
-  currentPlayerId: string;
-};
-
-export const gameState= writable<GameState | null>(null);
-
+export const gameState = writable<GameState | undefined>(undefined);
 export const roomId = writable<string>("familyroom");

@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { gameState, roomId, type OwnedCard } from '../store';
+  import { gameState, roomId } from '../store';
+    import type {  OwnedCard } from '../../shared/types';
   import { socket } from '../socket';
   import { fly } from 'svelte/transition';
   import { get } from 'svelte/store';
@@ -9,21 +10,32 @@
   const card = ownedCard.card;
 
   let isPlayable = false;
+  let isTurn = false;
 
   $: {
-    const trick = get(gameState);
-    if (!trick?.currentTrick.length) {
-      isPlayable = true;
-    } else  {
-      const suitPlayed = trick.currentTrick[0].card.suit;
-      isPlayable = ownedCard.player.hand.some(c => c.card.suit === suitPlayed)
-        ? card.suit === suitPlayed
-        : true;
+    const state = get(gameState);
+    if (!state) {
+      isPlayable = false;
+      isTurn = false;
+    } else {
+      isTurn = state.currentPlayer === ownedCard.player.name;
+
+      if (!isTurn) {
+        isPlayable = false;
+      } else if (!state.currentTrick.length) {
+        // first card of trick
+        isPlayable = true;
+      } else {
+        // must follow suit if possible
+        const suitLed = state.currentTrick[0].card.suit;
+        const hasSuit = ownedCard.player.hand.some(c => c.card.suit === suitLed);
+        isPlayable = hasSuit ? card.suit === suitLed : true;
+      }
     }
   }
 
   function playCard() {
-    if (!isPlayable) return;
+    if (!isPlayable || !isTurn) return;
     socket.emit('playCard', {
       roomId: $roomId,
       card: ownedCard
@@ -36,11 +48,14 @@
   role="button"
   tabindex={isPlayable ? 0 : -1}
   aria-disabled={!isPlayable}
-  on:click={() => isPlayable && playCard()}
-  on:keydown={(e) => isPlayable && (e.key === 'Enter' || e.key === ' ') && playCard()}
+  on:click={playCard}
+  on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && playCard()}
   transition:fly={{ y: -50, duration: 400 }}
 >
-  <img src={`/cards/${card.value.toLowerCase()}_of_${card.suit.toLowerCase()}.svg`} alt={card.value + ' of ' + card.suit} />
+  <img
+    src={`/cards/${card.value.toLowerCase()}_of_${card.suit.toLowerCase()}.svg`}
+    alt={`${card.value} of ${card.suit}`}
+  />
 </div>
 
 <style>

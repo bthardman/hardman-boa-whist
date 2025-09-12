@@ -1,7 +1,17 @@
 <script lang="ts">
-  import { scoreboard } from '../store';
-  import { winner } from '../store';
+  import { gameState } from '../store';
 </script>
+
+{#if $gameState}
+<div class="scoreboard">
+  <h2>Scoreboard</h2>
+  <ul>
+    {#each Object.entries($gameState.scoreboard) as [name, score]}
+      <li>{name} <span>{score}</span></li>
+    {/each}
+  </ul>
+</div>
+{/if}
 
 <style>
 .scoreboard {
@@ -31,22 +41,4 @@
   justify-content: space-between;
   align-items: center;
 }
-.scoreboard .winner {
-  font-weight: bold;
-  color: #27ae60;
-  font-size: 1.2rem;
-  margin-top: 1rem;
-}
 </style>
-
-<div class="scoreboard">
-  <h2>Scoreboard</h2>
-  <ul>
-    {#each Object.entries($scoreboard) as [name, score]}
-      <li>{name} <span>{score}</span></li>
-    {/each}
-  </ul>
-  {#if $winner}
-    <div class="winner">Winner: {$winner.name}</div>
-  {/if}
-</div>

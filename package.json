@@ -17,6 +17,7 @@
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^3.0.0",
     "@tsconfig/svelte": "^5.0.5",
+    "@types/express": "^5.0.3",
     "@types/node": "^24.3.1",
     "@types/socket.io-client": "^1.4.36",
     "svelte-preprocess": "^6.0.3",
