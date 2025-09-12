@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { players, currentTrick } from '../store';
+  import { players, gameState, type Player} from '../store';
   import Card from './Card.svelte';
   import { onDestroy } from 'svelte';
 
   let swapInterval = setInterval(() => {
-    players.update(pls => {
-      pls.forEach(player => {
+    players.update((pls: Player[]) => {
+      pls.forEach((player: Player) => {
         if (player.inGameAvatar) {
           player.inGameAvatar = player.inGameAvatar === player.avatar1 ? player.avatar2 : player.avatar1;
         } else {
@@ -25,17 +25,19 @@
       <img src={player.inGameAvatar || player.avatar1} alt={player.name} class="avatar"/>
       <div class="player-name">{player.name}</div>
       <div class="hand">
-        {#each player.hand as card}
-          <Card {card} {player}/>
+        {#each player.hand as ownedCard}
+          <Card {ownedCard}/>
         {/each}
       </div>
     </div>
   {/each}
 
   <div class="table">
-    {#each $currentTrick.cards as card}
-      <Card {card} />
-    {/each}
+    {#if $gameState}
+      {#each $gameState.currentTrick as ownedCard}
+        <Card {ownedCard} />
+      {/each}
+    {/if}
   </div>
 </div>
 

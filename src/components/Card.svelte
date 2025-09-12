@@ -1,20 +1,22 @@
 <script lang="ts">
-  import { players, currentTrick, type Card, type Player } from '../store';
+  import { gameState, roomId, type OwnedCard } from '../store';
+  import { socket } from '../socket';
   import { fly } from 'svelte/transition';
   import { get } from 'svelte/store';
 
-  export let card: Card;
-  export let player: Player;
+  export let ownedCard: OwnedCard;
+
+  const card = ownedCard.card;
 
   let isPlayable = false;
 
   $: {
-    const trick = get(currentTrick);
-    if (!trick.cards.length) {
+    const trick = get(gameState);
+    if (!trick?.currentTrick.length) {
       isPlayable = true;
-    } else {
-      const suitPlayed = trick.cards[0].suit;
-      isPlayable = player.hand.some(c => c.suit === suitPlayed)
+    } else  {
+      const suitPlayed = trick.currentTrick[0].card.suit;
+      isPlayable = ownedCard.player.hand.some(c => c.card.suit === suitPlayed)
         ? card.suit === suitPlayed
         : true;
     }
@@ -22,26 +24,20 @@
 
   function playCard() {
     if (!isPlayable) return;
-
-    players.update(pls => {
-      const p = pls.find(pl => pl.name === player.name);
-      if (p)
-      {
-        p.hand = p.hand.filter(c => c.id !== card.id);
-      }
-      return pls;
-    });
-
-    currentTrick.update(trick => {
-      trick.cards.push({ ...card, player: player.name });
-      return trick;
+    socket.emit('playCard', {
+      roomId: $roomId,
+      card: ownedCard
     });
   }
 </script>
 
 <div
   class="card {isPlayable ? 'playable' : 'unplayable'}"
-  on:click={playCard}
+  role="button"
+  tabindex={isPlayable ? 0 : -1}
+  aria-disabled={!isPlayable}
+  on:click={() => isPlayable && playCard()}
+  on:keydown={(e) => isPlayable && (e.key === 'Enter' || e.key === ' ') && playCard()}
   transition:fly={{ y: -50, duration: 400 }}
 >
   <img src={`/cards/${card.value.toLowerCase()}_of_${card.suit.toLowerCase()}.svg`} alt={card.value + ' of ' + card.suit} />

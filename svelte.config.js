@@ -1,4 +1,5 @@
-import { sveltekit } from '@sveltejs/kit/vite';
+import {sveltePreprocess} from 'svelte-preprocess';
+
 export default {
-  plugins: [sveltekit()]
+  preprocess: sveltePreprocess(),
 };

@@ -1,10 +1,12 @@
 import { writable } from 'svelte/store';
+export const scoreboard = writable<Record<string, number>>({});
+
+export type OwnedCard = {card: Card, player: Player };
 
 export type Card = {
   suit: string;
   value: string;
   id: string;
-  player?: string;
 };
 
 export type Player = {
@@ -13,8 +15,9 @@ export type Player = {
   avatar2: string;
   selectedAvatar?: string;
   inGameAvatar?: string;
-  hand: Card[];
+  hand: OwnedCard[];
   tricksWon: number;
+  socketId?: string;
 };
 
 export const players = writable<Player[]>([
@@ -26,7 +29,18 @@ export const players = writable<Player[]>([
   { name: 'Tony', avatar1: '/avatars/tony_1.png', avatar2: '/avatars/tony_2.png', hand: [], tricksWon: 0 },
 ]);
 
-export const currentTrick = writable<{ cards: Card[] }>({ cards: [] });
-
 export const winner = writable<Player | null>(null);
 export const gameStage = writable<'lobby' | 'playing' | 'winner'>('lobby');
+
+export type TrickPlay = { playerId: string; card: Card };
+
+export type GameState = {
+  roomId: string;
+  players: Player[];
+  currentTrick: OwnedCard[];
+  currentPlayerId: string;
+};
+
+export const gameState= writable<GameState | null>(null);
+
+export const roomId = writable<string>("familyroom");
