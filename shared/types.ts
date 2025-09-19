@@ -1,5 +1,17 @@
 // shared/types.ts
 
+export const AvatarChoice = {
+  ANGELA: 'angela',
+  BRAD: 'brad',
+  CAROL: 'carol',
+  DEREK: 'derek',
+  ROWAN: 'rowan',
+  TONY: 'tony',
+  UNDEFINED: 'undefined'
+} as const;
+
+export type AvatarChoice = typeof AvatarChoice[keyof typeof AvatarChoice];
+
 export type Card = {
   suit: string;
   value: string;
@@ -9,10 +21,7 @@ export type Card = {
 export type OwnedCard = { card: Card; player: Player };
 
 export type Player = {
-  name: string;
-  avatar1: string;
-  avatar2: string;
-  selectedAvatar?: string;
+  selectedAvatar: AvatarChoice; // required, initially UNDEFINED
   inGameAvatar?: string;
   hand: OwnedCard[];
   socketId?: string;
@@ -27,10 +36,10 @@ export type State = 'lobby' | 'bidding' | 'tricks' | 'round_end' | 'winner';
 export type GameState = {
   roomId: string;
   players: Player[];
-  currentPlayer: string;
-  firstPlayer: string;
+  currentPlayer: number; // player index
+  firstPlayer: number; // player index
   currentTrick: OwnedCard[];
   state: State;
   winner?: Player;
-  scoreboard: Record<string, number>;
+  scoreboard: Record<number, number>; // player index -> score
 };

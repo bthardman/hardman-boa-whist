@@ -1,16 +1,19 @@
 <script lang="ts">
-  import { winner, gameStage } from '../store';
+  import { gameState } from '../store';
+  import { getWinnerAvatarUrl } from '../avatarUtils';
+  import { getPlayerName } from '../avatarData';
 
-  function playAgain() {
-    gameStage.set('lobby');
+  function playAgain(event: MouseEvent & { currentTarget: EventTarget & HTMLButtonElement; }) {
+    // ToDo send message to Server
   }
+
 </script>
 
 <div class="winner-screen">
   <h2>Winner!</h2>
-  {#if $winner}
-    <img src={$winner.inGameAvatar || $winner.avatar1} alt={$winner.name} class="avatar"/>
-    <div class="player-name">{$winner.name}</div>
+  {#if $gameState && $gameState.winner}
+    <img src={getWinnerAvatarUrl($gameState.winner)} alt="Winner Avatar" class="avatar"/>
+    <div class="player-name">{getPlayerName($gameState.winner.selectedAvatar)}</div>
   {/if}
   <button on:click={playAgain}>Play Again</button>
 </div>

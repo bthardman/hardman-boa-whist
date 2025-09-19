@@ -1,45 +1,47 @@
 <script lang="ts">
-  import { players, gameState } from '../store';
+  import { gameState } from '../store';
   import type { Player, OwnedCard } from '../../shared/types';
   import Card from './Card.svelte';
   import BidSelector from './BidSelector.svelte';
   import { socket } from '../socket';
   import { onDestroy } from 'svelte';
   import { fly } from 'svelte/transition';
+  import { getAvatarData } from '../avatarData';
+  import { getPlayerAvatarUrl } from '../avatarUtils';
 
   let winnerMessage: string | null = null;
   let showWinner = false;
 
   // Avatar swapping
   let swapInterval = setInterval(() => {
-    players.update((pls: Player[]) => {
-      pls.forEach((player: Player) => {
+    if ($gameState?.players) {
+      $gameState.players.forEach((player: Player) => {
+        const avatarData = getAvatarData(player.selectedAvatar);
         if (player.inGameAvatar) {
           player.inGameAvatar =
-            player.inGameAvatar === player.avatar1 ? player.avatar2 : player.avatar1;
+            player.inGameAvatar === avatarData.avatar1 ? avatarData.avatar2 : avatarData.avatar1;
         } else {
-          player.inGameAvatar = player.avatar1;
+          player.inGameAvatar = avatarData.avatar1;
         }
       });
-      return pls;
-    });
+    }
   }, 1000);
 
   onDestroy(() => clearInterval(swapInterval));
 
   // Watch for trick resolution from server
-  $: if ($gameState?.state === 'tricks' && $gameState.currentTrick.length === $players.length) {
+  $: if ($gameState?.state === 'tricks' && $gameState.currentTrick.length === ($gameState.players?.length || 0)) {
     // All players have played -> announce trick winner
-    const trickWinner = calculateTrickWinner($gameState.currentTrick, $gameState.firstPlayer);
+    const trickWinner = calculateTrickWinner($gameState.currentTrick, $gameState.players[$gameState.firstPlayer]);
     if (trickWinner) {
-      winnerMessage = `${trickWinner.name} wins the trick!`;
+      winnerMessage = `Player ${$gameState?.players.findIndex(p => p === trickWinner) + 1} wins the trick!`;
       showWinner = true;
 
       // Delay 5s then clear trick + move cards to winner's stack
       setTimeout(() => {
         socket.emit('endTrick', {
           roomId: $gameState.roomId,
-          winner: trickWinner.name,
+          winner: $gameState?.players.findIndex(p => p === trickWinner),
         });
         showWinner = false;
         winnerMessage = null;
@@ -47,7 +49,7 @@
     }
   }
 
-  function calculateTrickWinner(trick: OwnedCard[], leadPlayer: string): Player | null {
+  function calculateTrickWinner(trick: OwnedCard[], leadPlayer: Player): Player | null {
     if (!trick.length) return null;
     const suitLed = trick[0].card.suit;
 
@@ -69,20 +71,21 @@
       }
     });
 
-    return $players.find((p) => p.name === winningCard.player.name) || null;
+    return $gameState?.players.find((p, index) => index === $gameState?.players.findIndex(player => player === winningCard.player)) || null;
   }
 
   function cardValue(v: string): number {
     const order = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
     return order.indexOf(v);
   }
+
 </script>
 
 <div class="gameboard">
-  {#each $players as player, i}
+  {#each $gameState?.players || [] as player, i}
     <div class="player-seat seat-{i}">
-      <img src={player.inGameAvatar || player.avatar1} alt={player.name} class="avatar" />
-      <div class="player-name">{player.name}</div>
+      <img src={getPlayerAvatarUrl(player)} alt="Player Avatar" class="avatar" />
+      <div class="player-name">Player {i + 1}</div>
 
       <!-- Trick pile (stack of won tricks) -->
       <div class="trick-pile">
@@ -115,13 +118,13 @@
   {/each}
 
   <!-- Bidding UI -->
-  {#if $gameState?.state === 'bidding' && $gameState?.currentPlayer}
+  {#if $gameState?.state === 'bidding' && $gameState?.currentPlayer !== undefined}
     <BidSelector
-      playerName={$gameState.currentPlayer}
+      playerName={`Player ${$gameState.currentPlayer + 1}`}
       on:bid={(e) =>
         socket.emit('submit_bid', {
           roomId: $gameState.roomId,
-          playerName: $gameState.currentPlayer,
+          playerIndex: $gameState.currentPlayer,
           bid: e.detail.bid
         })}
     />
