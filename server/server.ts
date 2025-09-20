@@ -50,52 +50,77 @@ io.on('connection', (socket) => {
       socket.emit('state_updated', room);
     }
   });
-  // Handle join_lobby from client - initial join without avatar
-  socket.on('join_lobby', ({ roomId }) => {
-    if (!rooms[roomId]) {
-      rooms[roomId] = {
-        roomId,
-        players: [],
-        currentPlayer: 0,
-        firstPlayer: 0,
-        currentTrick: [],
-        state: 'lobby',
-        scoreboard: {}
-      };
-    }
-    const room = rooms[roomId];
-    
-    // Add new player with UNDEFINED avatar
-    room.players.push({ 
-      selectedAvatar: AvatarChoice.UNDEFINED,
-      socketId: socket.id, 
-      hand: [],
-      tricksWon: 0
-    });
-    
-    socket.join(roomId);
-    io.to(roomId).emit('state_updated', room);
-  });
 
-  // Handle avatar selection
-  socket.on('select_avatar', ({ roomId, playerIndex, avatarChoice }) => {
-    const room = rooms[roomId];
-    if (!room) return;
-    
-    const player = room.players[playerIndex];
-    if (!player) return;
-    
-    // Check if avatar is already selected by another player
-    const isAvatarTaken = room.players.some((p, index) => index !== playerIndex && p.selectedAvatar === avatarChoice);
-    if (isAvatarTaken) {
-      socket.emit('avatar_selection_error', { message: 'Avatar already selected by another player' });
-      return;
-    }
-    
-    // Set the new selection
-    player.selectedAvatar = avatarChoice;
-    io.to(roomId).emit('state_updated', room);
-  });
+    // --- Player joins lobby ---
+    socket.on('join_lobby', ({ roomId, playerId }: { roomId: string, playerId: string }) => {
+      if (!rooms[roomId]) {
+        rooms[roomId] = {
+          roomId,
+          players: [],
+          currentPlayer: 0,
+          firstPlayer: 0,
+          currentTrick: [],
+          state: 'lobby',
+          scoreboard: {}
+        };
+      }
+  
+      const room = rooms[roomId];
+  
+      // Check if this player already exists (reconnect)
+      let player = room.players.find(p => p.playerId === playerId);
+      if (player) {
+        player.socketId = socket.id;
+        player.disconnected = false;
+      } else {
+        room.players.push({
+          playerId,
+          socketId: socket.id,
+          selectedAvatar: AvatarChoice.UNDEFINED,
+          hand: [],
+          tricksWon: 0
+        });
+      }
+  
+      socket.join(roomId);
+  
+      console.log('Lobby joined:', roomId, 'PlayerId:', playerId);
+  
+      io.to(roomId).emit('state_updated', room);
+    });
+  
+    // --- Player selects avatar ---
+    socket.on('select_avatar', ({ roomId, playerId, avatarChoice }: { roomId: string, playerId: string, avatarChoice: AvatarChoice }) => {
+      const room = rooms[roomId];
+      if (!room) return;
+  
+      const player = room.players.find(p => p.playerId === playerId);
+      if (!player) return;
+  
+      // Check if avatar is already taken
+      const isTaken = room.players.some(p => p.playerId !== playerId && p.selectedAvatar === avatarChoice);
+      if (isTaken) {
+        socket.emit('avatar_selection_error', { message: 'Avatar already selected by another player' });
+        return;
+      }
+  
+      player.selectedAvatar = avatarChoice;
+  
+      io.to(roomId).emit('state_updated', room);
+    });
+  
+    // --- Handle disconnects ---
+    socket.on('disconnect', () => {
+      for (const roomId in rooms) {
+        const room = rooms[roomId];
+        const player = room.players.find(p => p.socketId === socket.id);
+        if (player) {
+          player.disconnected = true;
+          io.to(roomId).emit('state_updated', room);
+        }
+      }
+      console.log('Client disconnected', socket.id);
+    });
 
   // Handle start_game from client
   socket.on('start_game', ({ roomId }) => {
@@ -114,33 +139,8 @@ io.on('connection', (socket) => {
     room.currentPlayer = 0;
     io.to(roomId).emit('state_updated', room);
   });
+
   console.log('client connected', socket.id);
-
-  socket.on('joinRoom', ({ roomId, playerName }) => {
-    if (!rooms[roomId]) {
-      rooms[roomId] = {
-        roomId,
-        players: [],
-        currentPlayer: 0,
-        firstPlayer: 0,
-        currentTrick: [],
-        state: 'lobby',
-        scoreboard: {}
-      };
-    }
-    const room = rooms[roomId];
-
-    // For now, just add a new player with UNDEFINED avatar
-    room.players.push({
-      selectedAvatar: AvatarChoice.UNDEFINED,
-      hand: [],
-      tricksWon: 0,
-      socketId: socket.id
-    });
-
-    socket.join(roomId);
-    io.to(roomId).emit('state_updated', room);
-  });
 
   socket.on('playCard', ({ roomId, card }) => {
     const room = rooms[roomId];
@@ -159,7 +159,7 @@ io.on('connection', (socket) => {
     const nextIdx = (card.playerIndex + 1) % room.players.length;
     room.currentPlayer = nextIdx;
 
-  io.to(roomId).emit('state_updated', room);
+    io.to(roomId).emit('state_updated', room);
   });
 
   socket.on('endTrick', ({ roomId, winner }) => {
@@ -174,18 +174,6 @@ io.on('connection', (socket) => {
     room.currentPlayer = winner;
 
   io.to(roomId).emit('state_updated', room);
-  });
-
-  socket.on('disconnect', () => {
-    for (const roomId in rooms) {
-      const room = rooms[roomId];
-      const player = room.players.find((p) => p.socketId === socket.id);
-      if (player) {
-        player.disconnected = true;
-  io.to(roomId).emit('state_updated', room);
-      }
-    }
-    console.log('client disconnected', socket.id);
   });
 });
 

@@ -24,6 +24,7 @@ export type Player = {
   selectedAvatar: AvatarChoice; // required, initially UNDEFINED
   inGameAvatar?: string;
   hand: OwnedCard[];
+  playerId: string;
   socketId?: string;
   tricksWon: number;
   bid?: number;

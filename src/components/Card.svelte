@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { gameState, roomId } from '../store';
+  import { gameState, roomId, localPlayer, localPlayerIndex } from '../store';
   import type {  OwnedCard } from '../../shared/types';
   import { socket } from '../socket';
   import { fly } from 'svelte/transition';
@@ -12,16 +12,13 @@
   let isPlayable = false;
   let isTurn = false;
 
-    // Reactive statement to find local player index
-  $: localPlayerIndex = $gameState?.players.findIndex(p => p.isLocal);
-
   $: {
     const state = get(gameState);
     if (!state) {
       isPlayable = false;
       isTurn = false;
-    } else {
-      isTurn = state.currentPlayer === localPlayerIndex;
+    } else if ($localPlayer) {
+      isTurn = state.currentPlayer === $localPlayerIndex;
 
       if (!isTurn) {
         isPlayable = false;

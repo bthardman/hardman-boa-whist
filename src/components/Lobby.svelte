@@ -1,16 +1,15 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { gameState, roomId, localPlayerIndex } from '../store';
+  import { gameState, roomId, localPlayer } from '../store';
   import type { Player } from '../../shared/types';
   import { AvatarChoice } from '../../shared/types';
   import { socket } from "../socket";
   import { getAvatarData, getPlayerName } from '../avatarData';
 
-  import { get } from 'svelte/store';
   let errorMessage = '';
 
   function startGame() {
-    socket.emit("start_game", { roomId });
+    socket.emit("start_game", { roomId: $roomId });
   }
 
   onMount(() => {
@@ -25,50 +24,54 @@
     });
   });
 
-  function selectAvatar(playerIndex: number, avatarChoice: AvatarChoice) {
-    errorMessage = '';
-    socket.emit("select_avatar", { 
-      roomId, 
-      playerIndex, 
-      avatarChoice 
-    });
-  }
+  function selectPlayerAvatar(avatarChoice: AvatarChoice) {
+    if (!$localPlayer || !$gameState) return;
 
-  function selectPlayerAvatar(playerIndex: number, avatarChoice: AvatarChoice) {
-    const idx = get(localPlayerIndex);
-    if (idx === undefined) return;
-    // Only block if avatar is taken by another player
-    const isAvatarTaken = $gameState?.players.some((p, index) => index !== idx && p.selectedAvatar === avatarChoice);
-    if (isAvatarTaken) {
+    const isTaken = $gameState.players.some(
+      p => p.playerId !== $localPlayer.playerId && p.selectedAvatar === avatarChoice
+    );
+
+    if (isTaken) {
       errorMessage = 'Avatar already selected by another player';
       setTimeout(() => errorMessage = '', 3000);
       return;
     }
-    selectAvatar(idx, avatarChoice);
+
+    socket.emit("select_avatar", { 
+      roomId: $roomId, 
+      playerId: $localPlayer.playerId, 
+      avatarChoice
+    });
   }
 
   function canStartGame(players: Player[]): boolean {
-    const playersWithAvatars = players.filter(p => p.selectedAvatar !== AvatarChoice.UNDEFINED).length || 0;
-    return playersWithAvatars >= 2;
+    return players.filter(p => p.selectedAvatar !== AvatarChoice.UNDEFINED).length >= 2;
   }
 
   function getAvatarSelectionState(players: Player[], avatarChoice: AvatarChoice) {
-    const selectedByIndex = players.findIndex(p => p.selectedAvatar === avatarChoice);
+    const selectedByPlayer = players.find(p => p.selectedAvatar === avatarChoice);
     return {
-      isSelected: selectedByIndex !== undefined && selectedByIndex !== -1,
-      selectedByIndex,
-      isSelectedByMe: selectedByIndex === $localPlayerIndex
+      isSelected: !!selectedByPlayer,
+      selectedByPlayerId: selectedByPlayer?.playerId,
+      isSelectedByMe: $localPlayer ? selectedByPlayer?.playerId === $localPlayer.playerId : false
     };
   }
 
   function getAvatarBorderColor(players: Player[], avatarChoice: AvatarChoice) {
     const state = getAvatarSelectionState(players, avatarChoice);
     if (state.isSelected) {
-      return state.isSelectedByMe ? '#4CAF50' : '#FF9800'; // Green for me, orange for others
+      return state.isSelectedByMe ? '#4CAF50' : '#E53935'; // Green for me, red for others
     }
     return '#ccc'; // Grey for unselected
   }
 
+  function getReadyTextColor(players: Player[], avatarChoice: AvatarChoice) {
+    const state = getAvatarSelectionState(players, avatarChoice);
+    if (state.isSelected) {
+      return state.isSelectedByMe ? '#4CAF50' : '#E53935'; // Same colors
+    }
+    return '#aaa'; // Waiting text can remain orange
+  }
 </script>
 
 <h1>Lobby</h1>
@@ -77,51 +80,56 @@
   <div class="error-message">{errorMessage}</div>
 {/if}
 
-  <div class="lobby">
-    {#each Object.values(AvatarChoice).filter(choice => choice !== AvatarChoice.UNDEFINED) as avatarChoice}
-  {#if $localPlayerIndex !== undefined && $gameState}
-        <div 
-          class="player-card"
-          class:clickable={!$gameState?.players.some((p, idx) => idx !== $localPlayerIndex && p.selectedAvatar === avatarChoice)}
-          class:selected={getAvatarSelectionState($gameState?.players, avatarChoice).isSelected}
-          on:click={() => selectPlayerAvatar(0, avatarChoice)}
-          on:keydown={(e) => e.key === 'Enter' && selectPlayerAvatar(0, avatarChoice)}
-          role="button"
-          tabindex="0"
-        >
-          <div class="player-name">{getPlayerName(avatarChoice)}</div>
-          <div class="avatar-options">
-            <div
-              class="avatar-option"
-              style="border-color: {getAvatarBorderColor($gameState?.players, avatarChoice)}"
-            >
-              <img src={getAvatarData(avatarChoice).avatar1} alt="{getPlayerName(avatarChoice)} Avatar" class="option-avatar" />
-              {#if getAvatarSelectionState($gameState?.players, avatarChoice).isSelected}
-                <div class="selection-indicator">
-                  {getAvatarSelectionState($gameState?.players, avatarChoice).isSelectedByMe ? 'You' : 'Player ' + ((getAvatarSelectionState($gameState?.players, avatarChoice).selectedByIndex ?? 0) + 1)}
-                </div>
-              {/if}
-            </div>
-          </div>
-          <div class="player-status">
-            {#if getAvatarSelectionState($gameState?.players, avatarChoice).isSelected}
-              <span class="status-ready">Ready to play</span>
-            {:else}
-              <span class="status-waiting">Click to select</span>
+<div class="lobby">
+  {#each Object.values(AvatarChoice).filter(c => c !== AvatarChoice.UNDEFINED) as avatarChoice}
+    {#if $localPlayer && $gameState}
+      <div 
+        class="player-card"
+        class:clickable={!$gameState.players.some((p) => p.selectedAvatar === avatarChoice)}
+        style="border-color: {getAvatarBorderColor($gameState.players, avatarChoice)}"
+        on:click={() => selectPlayerAvatar(avatarChoice)}
+        on:keydown={(e) => e.key === 'Enter' && selectPlayerAvatar(avatarChoice)}
+        role="button"
+        tabindex="0"
+      >
+        <div class="player-name">{getPlayerName(avatarChoice)}</div>
+        <div class="avatar-options">
+          <div
+            class="avatar-option"
+            style="border-color: {getAvatarBorderColor($gameState.players, avatarChoice)}"
+          >
+            <img src={getAvatarData(avatarChoice).avatar1} alt="{getPlayerName(avatarChoice)} Avatar" class="option-avatar" />
+            {#if getAvatarSelectionState($gameState.players, avatarChoice).isSelected}
+              <div class="selection-indicator">
+                {getAvatarSelectionState($gameState.players, avatarChoice).isSelectedByMe
+                  ? 'You'
+                  : 'Player ' + ($gameState.players.findIndex(p => p.selectedAvatar === avatarChoice) + 1)
+                }
+              </div>
             {/if}
           </div>
         </div>
-      {/if}
-    {/each}
-  </div>
+        <div class="player-status">
+            <span  style="color: {getReadyTextColor($gameState.players, avatarChoice)}">
+              {#if getAvatarSelectionState($gameState.players, avatarChoice).isSelected}
+                Ready to play
+              {:else}
+                Click to select
+              {/if}
+            </span>
+        </div>
+      </div>
+    {/if}
+  {/each}
+</div>
 
 {#if $gameState}
 <button 
   on:click={startGame} 
-  disabled={!canStartGame($gameState?.players)}
+  disabled={!canStartGame($gameState.players)}
   class="start-button"
 >
-  {canStartGame($gameState?.players) ? 'Start Game' : 'Need at least 2 players with selected avatars'}
+  {canStartGame($gameState.players) ? 'Start Game' : 'Need at least 2 players with selected avatars'}
 </button>
 {/if}
 
@@ -156,12 +164,7 @@
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
     transform: translateY(-2px);
   }
-  
-  .player-card.selected {
-    border-color: #4CAF50;
-    box-shadow: 0 0 10px rgba(76, 175, 80, 0.3);
-  }
-  
+
   .player-card.clickable:focus {
     outline: 2px solid #0077ff;
     outline-offset: 2px;
@@ -218,10 +221,6 @@
   .player-status {
     font-size: 0.9rem;
     font-weight: 500;
-  }
-  
-  .status-ready {
-    color: #4CAF50;
   }
   
   .status-waiting {
