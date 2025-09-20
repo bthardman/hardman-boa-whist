@@ -1,10 +1,10 @@
 <script lang="ts">
   import { gameState } from '../store';
+  import { onMount, onDestroy } from 'svelte';
   import type { Player, OwnedCard } from '../../shared/types';
   import Card from './Card.svelte';
   import BidSelector from './BidSelector.svelte';
   import { socket } from '../socket';
-  import { onDestroy } from 'svelte';
   import { fly } from 'svelte/transition';
   import { getAvatarData } from '../avatarData';
   import { getPlayerAvatarUrl } from '../avatarUtils';
@@ -13,21 +13,29 @@
   let showWinner = false;
 
   // Avatar swapping
-  let swapInterval = setInterval(() => {
-    if ($gameState?.players) {
-      $gameState.players.forEach((player: Player) => {
-        const avatarData = getAvatarData(player.selectedAvatar);
-        if (player.inGameAvatar) {
-          player.inGameAvatar =
-            player.inGameAvatar === avatarData.avatar1 ? avatarData.avatar2 : avatarData.avatar1;
-        } else {
-          player.inGameAvatar = avatarData.avatar1;
-        }
-      });
-    }
-  }, 1000);
+  let swapInterval: any;
+  onMount(() => {
+    document.body.classList.add('game-bg');
+    swapInterval = setInterval(() => {
+      if ($gameState?.players) {
+        $gameState.players.forEach((player: Player) => {
+          const avatarData = getAvatarData(player.selectedAvatar);
+          if (player.inGameAvatar) {
+            player.inGameAvatar =
+              player.inGameAvatar === avatarData.avatar1 ? avatarData.avatar2 : avatarData.avatar1;
+          } else {
+            player.inGameAvatar = avatarData.avatar1;
+          }
+        });
+      }
+    }, 1000);
+    return () => document.body.classList.remove('game-bg');
+  });
 
-  onDestroy(() => clearInterval(swapInterval));
+  onDestroy(() => {
+    clearInterval(swapInterval);
+    document.body.classList.remove('game-bg');
+  });
 
   // Watch for trick resolution from server
   $: if ($gameState?.state === 'tricks' && $gameState.currentTrick.length === ($gameState.players?.length || 0)) {
@@ -148,6 +156,16 @@
 </div>
 
 <style>
+  :global(body.game-bg) {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    min-height: 100vh;
+    width: 100vw;
+    background: #0E7A3A !important;
+    transition: background 0.3s;
+  }
+
   .gameboard {
     position: relative;
     width: 100%;

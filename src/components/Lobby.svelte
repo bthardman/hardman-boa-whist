@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { gameState, roomId, localPlayer } from '../store';
   import type { Player } from '../../shared/types';
   import { AvatarChoice } from '../../shared/types';
@@ -13,6 +13,9 @@
   }
 
   onMount(() => {
+    // Set body class for background
+    document.body.classList.add('lobby-bg');
+
     socket.on("avatar_selection_error", (data: { message: string }) => {
       errorMessage = data.message;
       setTimeout(() => errorMessage = '', 3000);
@@ -22,6 +25,12 @@
       errorMessage = data.message;
       setTimeout(() => errorMessage = '', 3000);
     });
+
+    return () => document.body.classList.remove('lobby-bg');
+  });
+
+  onDestroy(() => {
+    document.body.classList.remove('lobby-bg');
   });
 
   function selectPlayerAvatar(avatarChoice: AvatarChoice) {
@@ -60,7 +69,7 @@
   function getAvatarBorderColor(players: Player[], avatarChoice: AvatarChoice) {
     const state = getAvatarSelectionState(players, avatarChoice);
     if (state.isSelected) {
-      return state.isSelectedByMe ? '#4CAF50' : '#E53935'; // Green for me, red for others
+      return state.isSelectedByMe ? '#5AB9F2' : '#D81B60'; // Green for me, red for others
     }
     return '#ccc'; // Grey for unselected
   }
@@ -68,13 +77,15 @@
   function getReadyTextColor(players: Player[], avatarChoice: AvatarChoice) {
     const state = getAvatarSelectionState(players, avatarChoice);
     if (state.isSelected) {
-      return state.isSelectedByMe ? '#4CAF50' : '#E53935'; // Same colors
+      return state.isSelectedByMe ? '#5AB9F2' : '#D81B60'; // Same colors
     }
     return '#aaa'; // Waiting text can remain orange
   }
 </script>
 
-<h1>Lobby</h1>
+<header class="app-header">
+    <img src="/logo/logo.png" alt="Game Logo" class="app-logo" />
+</header>
 
 {#if errorMessage}
   <div class="error-message">{errorMessage}</div>
@@ -134,13 +145,42 @@
 {/if}
 
 <style>
+  .app-header {
+    width: 100vw;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-top: 1.5rem;
+    margin-bottom: 1.5rem;
+    z-index: 10;
+    position: relative;
+  }
+  .app-logo {
+    max-width: 200px;
+    max-height: 250px;
+    object-fit: contain;
+    filter: drop-shadow(0 2px 8px rgba(0,0,0,0.10));
+  }
+
+  :global(body.lobby-bg) {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    min-height: 100vh;
+    width: 100vw;
+    background: #E6F5FA !important;
+    transition: background 0.3s;
+  }
+
   .lobby {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(2, 1fr);
     gap: 2rem;
-    padding: 2rem;
-    max-width: 1200px;
+    max-width: 900px;
     margin: 0 auto;
+    min-height: 500px;
+    align-items: stretch;
   }
   
   .player-card {
@@ -148,7 +188,7 @@
     flex-direction: column;
     align-items: center;
     padding: 1.5rem;
-    border: 2px solid #e0e0e0;
+    border: 3px solid #e0e0e0;
     border-radius: 10px;
     background-color: #fafafa;
     transition: all 0.3s;
@@ -231,7 +271,7 @@
     margin-top: 2rem;
     padding: 1rem 2rem;
     font-size: 1.1rem;
-    background-color: #4CAF50;
+    background-color: #004C8C;
     color: white;
     border: none;
     border-radius: 5px;
@@ -243,7 +283,7 @@
   }
   
   .start-button:hover:not(:disabled) {
-    background-color: #45a049;
+    background-color: #00B7C2;
   }
   
   .start-button:disabled {

@@ -33,13 +33,15 @@
   $: console.log("$gameState:", $gameState);
 </script>
 
-{#if $gameState}
-  {#if $gameState.state === 'lobby'}
-    <Lobby />
-  {:else if $gameState.state === 'bidding' || $gameState.state === 'tricks' || $gameState.state === 'round_end'}
-    <Scoreboard />
-    <GameBoard />
-  {:else if $gameState.state === 'winner'}
-    <WinnerScreen />
+<div class="app-bg">
+  {#if $gameState}
+    {#if $gameState.state === 'lobby'}
+      <Lobby />
+    {:else if $gameState.state === 'bidding' || $gameState.state === 'tricks' || $gameState.state === 'round_end'}
+      <Scoreboard />
+      <GameBoard />
+    {:else if $gameState.state === 'winner'}
+      <WinnerScreen />
+    {/if}
   {/if}
-{/if}
+</div>
