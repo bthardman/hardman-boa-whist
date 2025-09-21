@@ -79,7 +79,7 @@
       }
     });
 
-    return $gameState?.players.find((p, index) => index === $gameState?.players.findIndex(player => player === winningCard.player)) || null;
+    return $gameState?.players.find((p, index) => index === $gameState?.players.findIndex(player => player.playerId === winningCard.playerId)) || null;
   }
 
   function cardValue(v: string): number {
@@ -87,6 +87,18 @@
     return order.indexOf(v);
   }
 
+  // Helper to sort hand by alternating red/black suits, then by value (low to high)
+  function getSortedHand(hand: OwnedCard[]): OwnedCard[] {
+    if (!hand) return [];
+    // Define suit color and alternating order: red/black/red/black
+    const suitOrder = ['hearts', 'clubs', 'diamonds', 'spades'];
+    const valueOrder = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+    return [...hand].sort((a, b) => {
+      const suitDiff = suitOrder.indexOf(a.card.suit) - suitOrder.indexOf(b.card.suit);
+      if (suitDiff !== 0) return suitDiff;
+      return valueOrder.indexOf(a.card.value) - valueOrder.indexOf(b.card.value); // low to high
+    });
+  }
 </script>
 
 {#if $gameState}
@@ -97,10 +109,17 @@
         <div class="opponent-seat seat-{idx} players-{($gameState?.players.length || 0) - 1}">
           <img src={getPlayerAvatarUrl(player)} alt="Avatar" class="opponent-avatar" />
           <div class="opponent-name">{player.selectedAvatar ? getAvatarData(player.selectedAvatar).name : 'Player'}</div>
-          <div class="opponent-hand">
+          <div class="opponent-hand hand-fanned">
             {#if player.hand && player.hand.length}
-              {#each player.hand as _, cIdx}
-                <div class="card-back" style="left: {cIdx * 28}px; z-index: {cIdx};"></div>
+              {#each player.hand as _, idx}
+                <div
+                  class="fanned-card card-back"
+                  style="
+                    left: calc(50% - 40px + {(idx - (player.hand.length - 1) / 2) * 36}px);
+                    z-index: {idx};
+                    transform: rotate({(idx - (player.hand.length - 1) / 2) *  -18}deg) translateY(-10px);
+                  "
+                ></div>
               {/each}
             {/if}
           </div>
@@ -155,8 +174,15 @@
         <img src={getPlayerAvatarUrl($localPlayer)} alt="Your Avatar" class="local-avatar" />
         <div class="local-name">{getAvatarData($localPlayer.selectedAvatar).name}</div>
         <div class="hand hand-fanned">
-          {#each $localPlayer.hand as ownedCard, idx (ownedCard.card.id)}
-            <div class="fanned-card" style="left: {idx * 28}px; z-index: {idx};">
+          {#each getSortedHand($localPlayer.hand) as ownedCard, idx (ownedCard.card.id)}
+            <div
+              class="fanned-card"
+              style="
+                left: calc(50% - 40px + {(idx - ($localPlayer.hand.length - 1) / 2) * 36}px);
+                z-index: {idx};
+                transform: rotate({(idx - ($localPlayer.hand.length - 1) / 2) * 18}deg) translateY(10px);
+              "
+            >
               <Card {ownedCard} />
             </div>
           {/each}
@@ -291,21 +317,37 @@
   }
   .fanned-card {
     position: absolute;
-    top: 0;
-    transition: transform 0.2s;
+    background: #ffffff;
+    border-radius: 8px;
+    transition: transform 0.2s, box-shadow 0.2s;
+    pointer-events: auto;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    overflow: visible;
   }
   .fanned-card:hover {
     z-index: 100;
-    transform: translateY(-18px) scale(1.08);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+    transform: scale(1.08) translateY(-18px) !important;
   }
   .opponent-hand {
     position: relative;
-    height: 60px;
-    min-width: 120px;
+    height: 80px;
+    min-width: 320px;
     margin-bottom: 0.5rem;
     margin-top: 0.2rem;
     width: fit-content;
     display: block;
+  }
+  .hand-fanned {
+    min-width: 320px;
+    height: 140px;
+    position: relative;
+    margin-left: auto;
+    margin-right: auto;
+    width: fit-content;
+    pointer-events: auto;
   }
   .trick-pile {
     position: relative;
@@ -336,6 +378,7 @@
     min-height: 180px;
     pointer-events: none;
   }
+
   .bid-center {
     display: flex;
     flex-direction: column;
@@ -348,10 +391,12 @@
     margin-top: 1.5rem;
     pointer-events: auto;
   }
+
   .played-card {
     width: 80px;
     height: 120px;
   }
+
   .winner-banner {
     position: absolute;
     top: 40%;
@@ -365,13 +410,20 @@
     box-shadow: 0 2px 10px rgba(0,0,0,0.4);
     z-index: 20;
   }
+
   .card-back {
     width: 80px;
     height: 120px;
-    border-radius: 6px;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
-    margin-left: -50px; /* overlap slightly for fanned look */
-    background: url('/cards/back.svg') center/cover no-repeat;
+    border-radius: 8px;
+    background: #fff url('/cards/back.svg') center/cover no-repeat;
+    border: 1.5px solid #d0d0d0;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    margin: 0;
+    opacity: 1;
+    overflow: visible;
   }
 
   .bid-wait-message {

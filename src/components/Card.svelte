@@ -28,8 +28,10 @@
         isPlayable = true;
       } else {
         // must follow suit if possible
+        // Find the local player's hand
+        const localHand = $localPlayer.hand;
         const suitLed = state.currentTrick[0].card.suit;
-        const hasSuit = ownedCard.player.hand.some(c => c.card.suit === suitLed);
+        const hasSuit = localHand.some(c => c.card.suit === suitLed);
         isPlayable = hasSuit ? card.suit === suitLed : true;
       }
     }
@@ -41,6 +43,18 @@
       roomId: $roomId,
       card: ownedCard
     });
+  }
+
+  function getCardFilename(card: { value: string; suit: string }) {
+    // Capitalize first letter of value (A, K, Q, J, 10, 9, ...)
+    let value = card.value;
+    if (value.length === 1) value = value.toUpperCase();
+    else if (["jack","queen","king","ace"].includes(value.toLowerCase())) value = value[0].toUpperCase();
+    else if (["j","q","k","a"].includes(value.toLowerCase())) value = value.toUpperCase();
+    // For 10, leave as 10
+    // Capitalize suit
+    // let suit = card.suit.charAt(0).toUpperCase() + card.suit.slice(1).toLowerCase();
+    return `${value}_of_${card.suit.toLowerCase()}.svg`;
   }
 </script>
 
@@ -54,8 +68,9 @@
   transition:fly={{ y: -50, duration: 400 }}
 >
   <img
-    src={`/cards/${card.value.toLowerCase()}_of_${card.suit.toLowerCase()}.svg`}
+    src={`/cards/${getCardFilename(card)}`}
     alt={`${card.value} of ${card.suit}`}
+    style="background: #fff; border-radius: 6px;"
   />
 </div>
 
@@ -66,19 +81,25 @@
     cursor: pointer;
     user-select: none;
     transition: transform 0.2s;
+    background: #fff;
+    border-radius: 6px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    position: relative;
+    z-index: 1;
   }
   .card img {
     width: 100%;
     height: 100%;
     border-radius: 6px;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    box-shadow: none;
+    background: #fff;
+    display: block;
   }
   .card.playable:hover {
     transform: translateY(-10px) scale(1.05);
     box-shadow: 0 6px 15px rgba(0,0,0,0.4);
   }
   .card.unplayable {
-    opacity: 0.5;
     cursor: not-allowed;
   }
 </style>

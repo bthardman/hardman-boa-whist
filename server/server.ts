@@ -39,7 +39,7 @@ function calculateTrickWinner(trick: OwnedCard[], players: Player[]): number {
     }
   });
 
-  return players.findIndex(p => p === winning.player);
+  return players.findIndex(p => p.playerId === winning.playerId);
 }
 
 io.on('connection', (socket) => {
@@ -152,12 +152,12 @@ io.on('connection', (socket) => {
     }
     // Deal cards evenly to all players
     const numPlayers = room.players.length;
-    const handSize = Math.floor(deck.length / numPlayers);
+  const handSize = 7;
     for (let i = 0; i < numPlayers; i++) {
       room.players[i].hand = [];
       for (let j = 0; j < handSize; j++) {
         const card = deck[i * handSize + j];
-        const ownedCard = { card, player: room.players[i] };
+        const ownedCard = { card, playerId: room.players[i].playerId };
         room.players[i].hand.push(ownedCard);
       }
       room.players[i].tricksWon = 0;

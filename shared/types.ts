@@ -18,7 +18,7 @@ export type Card = {
   id: string;
 };
 
-export type OwnedCard = { card: Card; player: Player };
+export type OwnedCard = { card: Card; playerId: string };
 
 export type Player = {
   selectedAvatar: AvatarChoice; // required, initially UNDEFINED
