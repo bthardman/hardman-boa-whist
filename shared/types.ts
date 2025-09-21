@@ -29,7 +29,6 @@ export type Player = {
   tricksWon: number;
   bid?: number;
   disconnected?: boolean;
-  isLocal?: boolean;
 };
 
 export type State = 'lobby' | 'bidding' | 'tricks' | 'round_end' | 'winner';

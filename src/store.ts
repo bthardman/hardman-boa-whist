@@ -36,4 +36,8 @@ export const localPlayerIndex = derived(
   }
 );
 
+export const isLocalPlayer = (player: Player) => {
+  return player.playerId === persistentId;
+}
+
 export const roomId = writable<string>("familyroom");

@@ -11,6 +11,23 @@
   }
 </script>
 
+<div class="bid-title">
+  {playerName}, select your bid for tricks:
+</div>
+<div class="bid-container">
+  {#each Array(8).fill(0).map((_, i) => i) as num}
+    <button
+      type="button"
+      class="bid-card {forbidden !== null && num === forbidden ? 'disabled' : ''}"
+      on:click={() => selectBid(num)}
+      disabled={forbidden !== null && num === forbidden}
+      aria-disabled={forbidden !== null && num === forbidden}
+    >
+      {num}
+    </button>
+  {/each}
+</div>
+
 <style>
 .bid-container {
   display: flex;
@@ -53,20 +70,3 @@
   color: #34495e;
 }
 </style>
-
-<div class="bid-title">
-  {playerName}, select your bid for tricks:
-</div>
-<div class="bid-container">
-  {#each Array(8).fill(0).map((_, i) => i) as num}
-    <button
-      type="button"
-      class="bid-card {forbidden !== null && num === forbidden ? 'disabled' : ''}"
-      on:click={() => selectBid(num)}
-      disabled={forbidden !== null && num === forbidden}
-      aria-disabled={forbidden !== null && num === forbidden}
-    >
-      {num}
-    </button>
-  {/each}
-</div>

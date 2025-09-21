@@ -18,7 +18,8 @@
       isPlayable = false;
       isTurn = false;
     } else if ($localPlayer) {
-      isTurn = state.currentPlayer === $localPlayerIndex;
+      // Only allow playing cards during 'tricks' phase and if it's the local player's turn
+      isTurn = state.currentPlayer === $localPlayerIndex && state.state === 'tricks';
 
       if (!isTurn) {
         isPlayable = false;

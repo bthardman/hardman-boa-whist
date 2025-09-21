@@ -51,90 +51,120 @@ io.on('connection', (socket) => {
     }
   });
 
-    // --- Player joins lobby ---
-    socket.on('join_lobby', ({ roomId, playerId }: { roomId: string, playerId: string }) => {
-      if (!rooms[roomId]) {
-        rooms[roomId] = {
-          roomId,
-          players: [],
-          currentPlayer: 0,
-          firstPlayer: 0,
-          currentTrick: [],
-          state: 'lobby',
-          scoreboard: {}
-        };
-      }
-  
+  // --- Player joins lobby ---
+  socket.on('join_lobby', ({ roomId, playerId }: { roomId: string, playerId: string }) => {
+    if (!rooms[roomId]) {
+      rooms[roomId] = {
+        roomId,
+        players: [],
+        currentPlayer: 0,
+        firstPlayer: 0,
+        currentTrick: [],
+        state: 'lobby',
+        scoreboard: {}
+      };
+    }
+
+    const room = rooms[roomId];
+
+    // Check if this player already exists (reconnect)
+    let player = room.players.find(p => p.playerId === playerId);
+    if (player) {
+      player.socketId = socket.id;
+      player.disconnected = false;
+    } else {
+      room.players.push({
+        playerId,
+        socketId: socket.id,
+        selectedAvatar: AvatarChoice.UNDEFINED,
+        hand: [],
+        tricksWon: 0
+      });
+    }
+
+    socket.join(roomId);
+
+    console.log('Lobby joined:', roomId, 'PlayerId:', playerId);
+
+    io.to(roomId).emit('state_updated', room);
+  });
+
+  // --- Player selects avatar ---
+  socket.on('select_avatar', ({ roomId, playerId, avatarChoice }: { roomId: string, playerId: string, avatarChoice: AvatarChoice }) => {
+    const room = rooms[roomId];
+    if (!room) return;
+
+    const player = room.players.find(p => p.playerId === playerId);
+    if (!player) return;
+
+    // Check if avatar is already taken
+    const isTaken = room.players.some(p => p.playerId !== playerId && p.selectedAvatar === avatarChoice);
+    if (isTaken) {
+      socket.emit('avatar_selection_error', { message: 'Avatar already selected by another player' });
+      return;
+    }
+
+    player.selectedAvatar = avatarChoice;
+
+    io.to(roomId).emit('state_updated', room);
+  });
+
+  // --- Handle disconnects ---
+  socket.on('disconnect', () => {
+    for (const roomId in rooms) {
       const room = rooms[roomId];
-  
-      // Check if this player already exists (reconnect)
-      let player = room.players.find(p => p.playerId === playerId);
+      const player = room.players.find(p => p.socketId === socket.id);
       if (player) {
-        player.socketId = socket.id;
-        player.disconnected = false;
-      } else {
-        room.players.push({
-          playerId,
-          socketId: socket.id,
-          selectedAvatar: AvatarChoice.UNDEFINED,
-          hand: [],
-          tricksWon: 0
-        });
+        player.disconnected = true;
+        io.to(roomId).emit('state_updated', room);
       }
-  
-      socket.join(roomId);
-  
-      console.log('Lobby joined:', roomId, 'PlayerId:', playerId);
-  
-      io.to(roomId).emit('state_updated', room);
-    });
-  
-    // --- Player selects avatar ---
-    socket.on('select_avatar', ({ roomId, playerId, avatarChoice }: { roomId: string, playerId: string, avatarChoice: AvatarChoice }) => {
-      const room = rooms[roomId];
-      if (!room) return;
-  
-      const player = room.players.find(p => p.playerId === playerId);
-      if (!player) return;
-  
-      // Check if avatar is already taken
-      const isTaken = room.players.some(p => p.playerId !== playerId && p.selectedAvatar === avatarChoice);
-      if (isTaken) {
-        socket.emit('avatar_selection_error', { message: 'Avatar already selected by another player' });
-        return;
-      }
-  
-      player.selectedAvatar = avatarChoice;
-  
-      io.to(roomId).emit('state_updated', room);
-    });
-  
-    // --- Handle disconnects ---
-    socket.on('disconnect', () => {
-      for (const roomId in rooms) {
-        const room = rooms[roomId];
-        const player = room.players.find(p => p.socketId === socket.id);
-        if (player) {
-          player.disconnected = true;
-          io.to(roomId).emit('state_updated', room);
-        }
-      }
-      console.log('Client disconnected', socket.id);
-    });
+    }
+    console.log('Client disconnected', socket.id);
+  });
 
   // Handle start_game from client
   socket.on('start_game', ({ roomId }) => {
     const room = rooms[roomId];
     if (!room) return;
-    
+
     // Check if at least 2 players have selected avatars
     const playersWithAvatars = room.players.filter(p => p.selectedAvatar).length;
     if (playersWithAvatars < 2) {
       socket.emit('start_game_error', { message: 'Need at least 2 players with selected avatars to start' });
       return;
     }
-    
-    // You may want to add logic to deal cards, set state, etc. For now, just update state.
+
+    // --- Deal cards ---
+    // Standard 52-card deck
+    const suits = ['clubs', 'diamonds', 'hearts', 'spades'];
+    const values = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+    let deck: { suit: string; value: string; id: string }[] = [];
+    let cardId = 1;
+    for (const suit of suits) {
+      for (const value of values) {
+        deck.push({ suit, value, id: String(cardId++) });
+      }
+    }
+    // Shuffle deck
+    for (let i = deck.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+    // Deal cards evenly to all players
+    const numPlayers = room.players.length;
+    const handSize = Math.floor(deck.length / numPlayers);
+    for (let i = 0; i < numPlayers; i++) {
+      room.players[i].hand = [];
+      for (let j = 0; j < handSize; j++) {
+        const card = deck[i * handSize + j];
+        const ownedCard = { card, player: room.players[i] };
+        room.players[i].hand.push(ownedCard);
+      }
+      room.players[i].tricksWon = 0;
+      room.players[i].bid = undefined;
+    }
+
+    room.currentTrick = [];
     room.state = 'bidding';
     room.currentPlayer = 0;
     io.to(roomId).emit('state_updated', room);
@@ -173,7 +203,38 @@ io.on('connection', (socket) => {
     room.currentTrick = [];
     room.currentPlayer = winner;
 
-  io.to(roomId).emit('state_updated', room);
+    io.to(roomId).emit('state_updated', room);
+  });
+
+  socket.on('submit_bid', ({ roomId, playerIndex, bid }) => {
+    const room = rooms[roomId];
+    if (!room) return;
+    const player = room.players[playerIndex];
+    if (!player) return;
+
+    // Only allow if it's this player's turn and they haven't bid yet
+    if (room.currentPlayer !== playerIndex || typeof player.bid === 'number') return;
+
+    player.bid = bid;
+
+    // Find next player who hasn't bid
+    let nextIdx = (playerIndex + 1) % room.players.length;
+    let allBidded = true;
+    for (let i = 0; i < room.players.length; i++) {
+      if (typeof room.players[i].bid !== 'number') {
+        allBidded = false;
+        nextIdx = i;
+        break;
+      }
+    }
+
+    if (allBidded) {
+      room.state = 'tricks';
+    } else {
+      room.currentPlayer = nextIdx;
+    }
+
+    io.to(roomId).emit('state_updated', room);
   });
 });
 
