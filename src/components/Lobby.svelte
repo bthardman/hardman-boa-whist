@@ -162,8 +162,8 @@
     position: relative;
   }
   .app-logo {
-    max-width: 200px;
-    max-height: 250px;
+    max-width: clamp(150px, 30vw, 200px);
+    max-height: clamp(180px, 40vw, 250px);
     object-fit: contain;
     filter: drop-shadow(0 2px 8px rgba(0,0,0,0.10));
   }
@@ -180,22 +180,34 @@
 
   .lobby {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    grid-template-rows: repeat(2, 1fr);
-    gap: 2rem;
-    max-width: 900px;
+    grid-template-columns: repeat(auto-fit, minmax(clamp(200px, 25vw, 280px), 1fr));
+    gap: clamp(1rem, 3vw, 2rem);
+    max-width: min(900px, 95vw);
     margin: 0 auto;
-    min-height: 500px;
+    min-height: clamp(400px, 60vh, 500px);
     align-items: stretch;
+    padding: 0 clamp(0.5rem, 2vw, 1rem);
+  }
+
+  @media (max-width: 768px) {
+    .lobby {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (max-width: 480px) {
+    .lobby {
+      grid-template-columns: 1fr;
+    }
   }
   
   .player-card {
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 1.5rem;
-    border: 3px solid #e0e0e0;
-    border-radius: 10px;
+    padding: clamp(1rem, 2.5vw, 1.5rem);
+    border: clamp(2px, 0.5vw, 3px) solid #e0e0e0;
+    border-radius: clamp(8px, 2vw, 10px);
     background-color: #fafafa;
     transition: all 0.3s;
     cursor: default;
@@ -217,10 +229,11 @@
   }
   
   .player-name {
-    font-size: 1.2rem;
+    font-size: clamp(1rem, 2.5vw, 1.2rem);
     font-weight: bold;
-    margin-bottom: 1rem;
+    margin-bottom: clamp(0.75rem, 2vh, 1rem);
     color: #333;
+    text-align: center;
   }
   
   .avatar-options {
@@ -232,20 +245,20 @@
   .avatar-option {
     position: relative;
     background: none;
-    border: 3px solid #ccc;
+    border: clamp(2px, 0.5vw, 3px) solid #ccc;
     border-radius: 50%;
     padding: 0;
     transition: all 0.3s;
-    width: 80px;
-    height: 80px;
+    width: clamp(60px, 12vw, 80px);
+    height: clamp(60px, 12vw, 80px);
     display: flex;
     align-items: center;
     justify-content: center;
   }
   
   .option-avatar {
-    width: 70px;
-    height: 70px;
+    width: clamp(55px, 11vw, 70px);
+    height: clamp(55px, 11vw, 70px);
     border-radius: 50%;
     object-fit: cover;
   }
@@ -265,8 +278,9 @@
   }
   
   .player-status {
-    font-size: 0.9rem;
+    font-size: clamp(0.8rem, 2vw, 0.9rem);
     font-weight: 500;
+    text-align: center;
   }
   
   .status-waiting {
@@ -274,18 +288,22 @@
   }
   
   .start-button {
-    margin-top: 2rem;
-    padding: 1rem 2rem;
-    font-size: 1.1rem;
+    margin-top: clamp(1rem, 3vh, 2rem);
+    padding: clamp(0.75rem, 2vh, 1rem) clamp(1rem, 3vw, 2rem);
+    min-height: 44px;
+    font-size: clamp(0.95rem, 2.5vw, 1.1rem);
     background-color: #004C8C;
     color: white;
     border: none;
-    border-radius: 5px;
+    border-radius: clamp(4px, 1vw, 5px);
     cursor: pointer;
     transition: background-color 0.3s;
     display: block;
     margin-left: auto;
     margin-right: auto;
+    touch-action: manipulation;
+    max-width: 95vw;
+    word-wrap: break-word;
   }
   
   .start-button:hover:not(:disabled) {
@@ -300,10 +318,14 @@
   .error-message {
     background-color: #f44336;
     color: white;
-    padding: 1rem;
-    margin: 1rem 0;
-    border-radius: 5px;
+    padding: clamp(0.75rem, 2vw, 1rem);
+    margin: clamp(0.75rem, 2vh, 1rem) clamp(0.5rem, 2vw, 1rem);
+    border-radius: clamp(4px, 1vw, 5px);
     text-align: center;
+    font-size: clamp(0.9rem, 2.5vw, 1rem);
+    max-width: 95vw;
+    margin-left: auto;
+    margin-right: auto;
   }
   
   /* Color coding for avatar borders */

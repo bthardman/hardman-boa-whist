@@ -1,6 +1,6 @@
 // Room management and state
-import type { GameState, Player } from '../../shared/types';
-import { AvatarChoice } from '../../shared/types';
+import type { GameState, Player } from '../../shared/types.ts';
+import { AvatarChoice } from '../../shared/types.ts';
 
 export class RoomManager {
   private rooms: Record<string, GameState> = {};

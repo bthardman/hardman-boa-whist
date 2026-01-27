@@ -7,7 +7,7 @@
 {#if $gameState && $gameState.roundNumber > 0}
 <div class="scoreboard">
   <h2>Scoreboard</h2>
-  <div class="round-info">Round {$gameState.roundNumber}{#if $gameState.maxRounds} / {$gameState.maxRounds}{/if}</div>
+  <div class="round-info">Round {$gameState.roundNumber}</div>
   <ul>
     {#each $gameState.players as player, index}
       {@const score = $gameState.scoreboard[index] || 0}

@@ -1,5 +1,5 @@
 // Card utility functions
-import type { Card } from '../../shared/types';
+import type { Card } from '../../shared/types.ts';
 
 export function createDeck(): Card[] {
   const suits = ['clubs', 'diamonds', 'hearts', 'spades'];

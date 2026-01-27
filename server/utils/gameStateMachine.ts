@@ -1,5 +1,5 @@
 // Game state machine for managing state transitions
-import type { GameState } from '../../shared/types';
+import type { GameState } from '../../shared/types.ts';
 
 export type State = 'lobby' | 'bidding' | 'tricks' | 'round_end' | 'winner';
 

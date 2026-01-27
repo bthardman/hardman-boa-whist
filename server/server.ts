@@ -3,11 +3,12 @@ import http from 'http';
 import { Server } from 'socket.io';
 import type { OwnedCard } from '../shared/types.ts';
 import { AvatarChoice } from '../shared/types.ts';
-import { RoomManager } from './utils/roomManager';
-import { createDeck, dealCards } from './utils/cardUtils';
-import { calculateTrickWinner, canPlayCard } from './utils/gameLogic';
-import { GameStateMachine } from './utils/gameStateMachine';
-import { calculateRoundScores, updateTotalScores, checkGameEnd, findGameWinner, checkRoundEnd } from './utils/scoreCalculator';
+import { RoomManager } from './utils/roomManager.ts';
+import { createDeck } from './utils/cardUtils.ts';
+import { calculateTrickWinner, canPlayCard, dealCards } from './utils/gameLogic.ts';
+import { GameStateMachine } from './utils/gameStateMachine.ts';
+import { calculateRoundScores, updateTotalScores, checkGameEnd, findGameWinner, checkRoundEnd } from './utils/scoreCalculator.ts';
+import { isValidBid, getForbiddenBid } from './utils/biddingRules.ts';
 
 const app = express();
 const server = http.createServer(app);
@@ -102,8 +103,6 @@ io.on('connection', (socket) => {
     // Initialize game settings if first round
     if (room.roundNumber === 0) {
       room.scoreboard = {};
-      room.maxRounds = 7; // Default: 7 rounds
-      room.winningScore = 100; // Default: first to 100 wins
     }
 
     // Start new round
@@ -111,6 +110,9 @@ io.on('connection', (socket) => {
     const deck = createDeck();
     const handSize = 7;
     dealCards(deck, room.players, handSize);
+
+    // Rotate dealer (firstPlayer) clockwise each round
+    room.firstPlayer = (room.firstPlayer + 1) % room.players.length;
 
     // Reset round state
     room.currentTrick = [];
@@ -120,8 +122,7 @@ io.on('connection', (socket) => {
     });
     
     GameStateMachine.transition(room, 'bidding');
-    room.currentPlayer = 0;
-    room.firstPlayer = 0;
+    room.currentPlayer = room.firstPlayer; // Bidding starts with dealer
 
     io.to(roomId).emit('state_updated', room);
   });
@@ -207,6 +208,13 @@ io.on('connection', (socket) => {
       return;
     }
 
+    // Validate bid (check if it would make total = 7 for last bidder)
+    const validation = isValidBid(room, playerIndex, bid);
+    if (!validation.valid) {
+      socket.emit('bid_error', { message: validation.message || 'Invalid bid' });
+      return;
+    }
+
     player.bid = bid;
 
     // Find next player who hasn't bid
@@ -252,6 +260,9 @@ io.on('connection', (socket) => {
     const handSize = 7;
     dealCards(deck, room.players, handSize);
 
+    // Rotate dealer (firstPlayer) clockwise each round
+    room.firstPlayer = (room.firstPlayer + 1) % room.players.length;
+
     // Reset round state
     room.currentTrick = [];
     room.players.forEach(p => {
@@ -260,8 +271,7 @@ io.on('connection', (socket) => {
     });
     
     GameStateMachine.transition(room, 'bidding');
-    room.currentPlayer = 0;
-    room.firstPlayer = 0;
+    room.currentPlayer = room.firstPlayer; // Bidding starts with dealer
 
     io.to(roomId).emit('state_updated', room);
   });

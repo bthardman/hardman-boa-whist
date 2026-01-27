@@ -1,5 +1,5 @@
 // Score calculation and round management
-import type { GameState, Player } from '../../shared/types';
+import type { GameState, Player } from '../../shared/types.ts';
 
 export function calculateRoundScores(room: GameState): Record<number, number> {
   const roundScores: Record<number, number> = {};
@@ -8,13 +8,11 @@ export function calculateRoundScores(room: GameState): Record<number, number> {
     const bid = player.bid ?? 0;
     const tricksWon = player.tricksWon;
     
-    // Score calculation: 
-    // - If tricks won equals bid: score = bid + 10 bonus points
-    // - Otherwise: score = tricks won (no bonus)
+    // Score calculation: 1 point if tricks won equals bid, 0 otherwise
     if (bid === tricksWon) {
-      roundScores[index] = bid + 10;
+      roundScores[index] = 1;
     } else {
-      roundScores[index] = tricksWon;
+      roundScores[index] = 0;
     }
   });
   
@@ -35,22 +33,32 @@ export function updateTotalScores(room: GameState, roundScores: Record<number, n
 }
 
 export function checkGameEnd(room: GameState): boolean {
-  // Check if max rounds reached
-  if (room.maxRounds && room.roundNumber >= room.maxRounds) {
+  // Game ends when a player reaches 5 points
+  const hasPlayerAt5 = Object.values(room.scoreboard).some(score => score >= 5);
+  if (!hasPlayerAt5) {
+    return false;
+  }
+  
+  // If multiple players at 5+, check if we're in overtime
+  const playersAt5Plus = Object.values(room.scoreboard).filter(score => score >= 5);
+  
+  // If only one player at 5+, game ends
+  if (playersAt5Plus.length === 1) {
     return true;
   }
   
-  // Check if any player reached winning score
-  if (room.winningScore) {
-    const hasWinner = Object.values(room.scoreboard).some(
-      score => score >= room.winningScore!
-    );
-    if (hasWinner) {
-      return true;
-    }
-  }
+  // Multiple players at 5+ means overtime - game continues until one player has more points
+  // Check if there's a clear winner (one player has strictly more points than others at 5+)
+  const scoresAt5Plus: number[] = [];
+  Object.values(room.scoreboard).forEach(score => {
+    if (score >= 5) scoresAt5Plus.push(score);
+  });
   
-  return false;
+  const maxScore = Math.max(...scoresAt5Plus);
+  const playersWithMaxScore = scoresAt5Plus.filter(s => s === maxScore).length;
+  
+  // Game ends if one player has strictly more points than all others at 5+
+  return playersWithMaxScore === 1;
 }
 
 export function findGameWinner(room: GameState): Player | undefined {
@@ -58,13 +66,13 @@ export function findGameWinner(room: GameState): Player | undefined {
     return undefined;
   }
   
-  // Find player with highest score
+  // Find player with highest score (must be >= 5)
   let maxScore = -1;
   let winnerIndex = -1;
   
   Object.entries(room.scoreboard).forEach(([index, score]) => {
     const playerIndex = parseInt(index);
-    if (score > maxScore) {
+    if (score >= 5 && score > maxScore) {
       maxScore = score;
       winnerIndex = playerIndex;
     }

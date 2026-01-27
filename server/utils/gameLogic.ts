@@ -1,6 +1,6 @@
 // Game logic and rules
-import type { OwnedCard, Player, Card } from '../../shared/types';
-import { cardValue } from './cardUtils';
+import type { OwnedCard, Player, Card } from '../../shared/types.ts';
+import { cardValue } from './cardUtils.ts';
 
 export function calculateTrickWinner(trick: OwnedCard[], players: Player[]): number {
   if (!trick.length) return -1;

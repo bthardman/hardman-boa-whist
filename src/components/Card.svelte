@@ -76,21 +76,23 @@
 
 <style>
   .card {
-    width: 80px;
-    height: 120px;
+    width: clamp(60px, 12vw, 80px);
+    height: clamp(90px, 18vw, 120px);
     cursor: pointer;
     user-select: none;
     transition: transform 0.2s;
     background: #fff;
-    border-radius: 6px;
+    border-radius: clamp(4px, 1vw, 6px);
     box-shadow: 0 2px 5px rgba(0,0,0,0.3);
     position: relative;
     z-index: 1;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
   .card img {
     width: 100%;
     height: 100%;
-    border-radius: 6px;
+    border-radius: clamp(4px, 1vw, 6px);
     box-shadow: none;
     background: #fff;
     display: block;
@@ -99,7 +101,13 @@
     transform: translateY(-10px) scale(1.05);
     box-shadow: 0 6px 15px rgba(0,0,0,0.4);
   }
+  @media (hover: none) {
+    .card.playable:active {
+      transform: translateY(-5px) scale(1.02);
+    }
+  }
   .card.unplayable {
     cursor: not-allowed;
+    opacity: 0.6;
   }
 </style>
