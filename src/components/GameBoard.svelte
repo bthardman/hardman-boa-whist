@@ -1,90 +1,65 @@
 <script lang="ts">
-  import { gameState, isLocalPlayer, localPlayer, localPlayerId } from '../store';
+  import { gameState, isLocalPlayer, localPlayer, localPlayerId, roomId } from '../store';
   import { onMount, onDestroy } from 'svelte';
   import type { Player, OwnedCard } from '../../shared/types';
   import Card from './Card.svelte';
   import BidSelector from './BidSelector.svelte';
+  import Scoreboard from './Scoreboard.svelte';
   import { socket } from '../socket';
   import { fly } from 'svelte/transition';
   import { getAvatarData } from '../avatarData';
   import { getPlayerAvatarUrl } from '../avatarUtils';
+  import { startAvatarSwap, stopAvatarSwap, stopAllAvatarSwaps } from '../utils/avatarManager';
 
   let winnerMessage: string | null = null;
   let showWinner = false;
+  let previousTrickLength = 0;
 
-  // Avatar swapping
-  let swapInterval: any;
+  function startNextRound() {
+    socket.emit('next_round', { roomId: $roomId });
+  }
+
   onMount(() => {
     document.body.classList.add('game-bg');
-    swapInterval = setInterval(() => {
-      if ($gameState?.players) {
-        $gameState.players.forEach((player: Player) => {
-          const avatarData = getAvatarData(player.selectedAvatar);
-          if (player.inGameAvatar) {
-            player.inGameAvatar =
-              player.inGameAvatar === avatarData.avatar1 ? avatarData.avatar2 : avatarData.avatar1;
-          } else {
-            player.inGameAvatar = avatarData.avatar1;
-          }
-        });
-      }
-    }, 1000);
-    return () => document.body.classList.remove('game-bg');
+    
+    // Start avatar swapping for all players
+    if ($gameState?.players) {
+      $gameState.players.forEach((player: Player) => {
+        startAvatarSwap(player);
+      });
+    }
+    
+    return () => {
+      stopAllAvatarSwaps();
+      document.body.classList.remove('game-bg');
+    };
   });
 
   onDestroy(() => {
-    clearInterval(swapInterval);
+    stopAllAvatarSwaps();
     document.body.classList.remove('game-bg');
   });
 
-  // Watch for trick resolution from server
-  $: if ($gameState?.state === 'tricks' && $gameState.currentTrick.length === ($gameState.players?.length || 0)) {
-    // All players have played -> announce trick winner
-    const trickWinner = calculateTrickWinner($gameState.currentTrick, $gameState.players[$gameState.firstPlayer]);
-    if (trickWinner) {
-      winnerMessage = `Player ${$gameState?.players.findIndex(p => p === trickWinner) + 1} wins the trick!`;
+  // Watch for trick completion - server handles winner calculation
+  $: if ($gameState?.state === 'tricks') {
+    const currentTrickLength = $gameState.currentTrick.length;
+    const numPlayers = $gameState.players?.length || 0;
+    
+    // Trick just completed (was full, now empty or reset)
+    if (previousTrickLength === numPlayers && currentTrickLength === 0 && numPlayers > 0) {
+      // Server has already calculated winner and updated state
+      // Find the player who won (they should have incremented tricksWon)
+      // Show a brief message
       showWinner = true;
-
-      // Delay 5s then clear trick + move cards to winner's stack
+      winnerMessage = 'Trick completed!';
+      
       setTimeout(() => {
-        socket.emit('endTrick', {
-          roomId: $gameState.roomId,
-          winner: $gameState?.players.findIndex(p => p === trickWinner),
-        });
         showWinner = false;
         winnerMessage = null;
-      }, 5000);
+      }, 2000);
     }
-  }
-
-  function calculateTrickWinner(trick: OwnedCard[], leadPlayer: Player): Player | null {
-    if (!trick.length) return null;
-    const suitLed = trick[0].card.suit;
-
-    let winningCard = trick[0];
-    trick.forEach((played) => {
-      if (
-        // Hearts are always trumps
-        (played.card.suit === 'hearts' && winningCard.card.suit !== 'hearts') ||
-        // Higher trump beats lower trump
-        (played.card.suit === 'hearts' &&
-          winningCard.card.suit === 'hearts' &&
-          cardValue(played.card.value) > cardValue(winningCard.card.value)) ||
-        // Higher of led suit (if no trump present)
-        (played.card.suit === suitLed &&
-          winningCard.card.suit === suitLed &&
-          cardValue(played.card.value) > cardValue(winningCard.card.value))
-      ) {
-        winningCard = played;
-      }
-    });
-
-    return $gameState?.players.find((p, index) => index === $gameState?.players.findIndex(player => player.playerId === winningCard.playerId)) || null;
-  }
-
-  function cardValue(v: string): number {
-    const order = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
-    return order.indexOf(v);
+    
+    previousTrickLength = currentTrickLength;
   }
 
   // Helper to sort hand by alternating red/black suits, then by value (low to high)
@@ -165,6 +140,42 @@
       <!-- Trick winner announcement -->
       {#if showWinner && winnerMessage}
         <div class="winner-banner">{winnerMessage}</div>
+      {/if}
+
+      <!-- Round End Overlay -->
+      {#if $gameState?.state === 'round_end'}
+        <div class="round-end-overlay">
+          <div class="round-end-content">
+            <h2>Round {$gameState.roundNumber} Complete!</h2>
+            <div class="round-results">
+              {#each $gameState.players as player, index}
+                {@const bid = player.bid ?? 0}
+                {@const tricks = player.tricksWon}
+                {@const score = bid === tricks ? bid + 10 : tricks}
+                {@const isSuccess = bid === tricks}
+                <div class="player-result" class:success={isSuccess} class:failure={!isSuccess}>
+                  <span class="player-name">{getAvatarData(player.selectedAvatar).name}</span>
+                  <span class="result-details">
+                    Bid: {bid} | Tricks: {tricks} | Score: {score}
+                    {#if isSuccess}
+                      <span class="bonus">+10 bonus!</span>
+                    {/if}
+                  </span>
+                </div>
+              {/each}
+            </div>
+            <Scoreboard />
+            <button class="next-round-button" on:click={startNextRound}>
+              {#if $gameState.maxRounds && $gameState.roundNumber >= $gameState.maxRounds}
+                View Final Scores
+              {:else if $gameState.winningScore && Object.values($gameState.scoreboard || {}).some(s => s >= $gameState.winningScore!)}
+                View Final Scores
+              {:else}
+                Start Next Round
+              {/if}
+            </button>
+          </div>
+        </div>
       {/if}
     </div>
 
@@ -436,5 +447,98 @@
     text-align: center;
     box-shadow: 0 2px 8px rgba(0,0,0,0.10);
     z-index: 10;
+  }
+
+  .round-end-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    pointer-events: auto;
+  }
+
+  .round-end-content {
+    background: #fff;
+    border-radius: 16px;
+    padding: 2rem 3rem;
+    max-width: 600px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  }
+
+  .round-end-content h2 {
+    margin: 0 0 1.5rem 0;
+    font-size: 2rem;
+    color: #2c3e50;
+    text-align: center;
+  }
+
+  .round-results {
+    margin-bottom: 1.5rem;
+  }
+
+  .player-result {
+    padding: 1rem;
+    margin: 0.5rem 0;
+    border-radius: 8px;
+    background: #f5f5f5;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .player-result.success {
+    background: #e8f5e9;
+    border: 2px solid #4caf50;
+  }
+
+  .player-result.failure {
+    background: #ffebee;
+    border: 2px solid #f44336;
+  }
+
+  .player-result .player-name {
+    font-weight: 600;
+    font-size: 1.1rem;
+    color: #2c3e50;
+  }
+
+  .player-result .result-details {
+    font-size: 0.95rem;
+    color: #555;
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .player-result .bonus {
+    color: #4caf50;
+    font-weight: 600;
+  }
+
+  .next-round-button {
+    width: 100%;
+    padding: 1rem 2rem;
+    font-size: 1.2rem;
+    font-weight: 600;
+    background-color: #004C8C;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+    margin-top: 1rem;
+  }
+
+  .next-round-button:hover {
+    background-color: #00B7C2;
   }
 </style>

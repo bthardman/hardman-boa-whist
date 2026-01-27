@@ -42,4 +42,7 @@ export type GameState = {
   state: State;
   winner?: Player;
   scoreboard: Record<number, number>; // player index -> score
+  roundNumber: number; // current round number
+  maxRounds?: number; // optional: max rounds before game ends
+  winningScore?: number; // optional: score threshold to win
 };

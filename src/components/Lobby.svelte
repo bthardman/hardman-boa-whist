@@ -5,6 +5,7 @@
   import { AvatarChoice } from '../../shared/types';
   import { socket } from "../socket";
   import { getAvatarData, getPlayerName } from '../avatarData';
+  import { registerErrorHandler, unregisterErrorHandler } from '../utils/socketHandlers';
 
   let errorMessage = '';
 
@@ -12,24 +13,29 @@
     socket.emit("start_game", { roomId: $roomId });
   }
 
+  function handleError(message: string) {
+    errorMessage = message;
+    setTimeout(() => errorMessage = '', 3000);
+  }
+
   onMount(() => {
     // Set body class for background
     document.body.classList.add('lobby-bg');
 
-    socket.on("avatar_selection_error", (data: { message: string }) => {
-      errorMessage = data.message;
-      setTimeout(() => errorMessage = '', 3000);
-    });
+    // Register error handlers
+    registerErrorHandler("avatar_selection_error", handleError);
+    registerErrorHandler("start_game_error", handleError);
 
-    socket.on("start_game_error", (data: { message: string }) => {
-      errorMessage = data.message;
-      setTimeout(() => errorMessage = '', 3000);
-    });
-
-    return () => document.body.classList.remove('lobby-bg');
+    return () => {
+      unregisterErrorHandler("avatar_selection_error");
+      unregisterErrorHandler("start_game_error");
+      document.body.classList.remove('lobby-bg');
+    };
   });
 
   onDestroy(() => {
+    unregisterErrorHandler("avatar_selection_error");
+    unregisterErrorHandler("start_game_error");
     document.body.classList.remove('lobby-bg');
   });
 

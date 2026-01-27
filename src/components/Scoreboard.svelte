@@ -1,13 +1,24 @@
 <script lang="ts">
   import { gameState } from '../store';
+  import { getAvatarData } from '../avatarData';
+  import type { Player } from '../../shared/types';
 </script>
 
-{#if $gameState}
+{#if $gameState && $gameState.roundNumber > 0}
 <div class="scoreboard">
   <h2>Scoreboard</h2>
+  <div class="round-info">Round {$gameState.roundNumber}{#if $gameState.maxRounds} / {$gameState.maxRounds}{/if}</div>
   <ul>
-    {#each Object.entries($gameState.scoreboard) as [name, score]}
-      <li>{name} <span>{score}</span></li>
+    {#each $gameState.players as player, index}
+      {@const score = $gameState.scoreboard[index] || 0}
+      {@const isLeading = Math.max(...Object.values($gameState.scoreboard || {})) === score && score > 0}
+      <li class:leading={isLeading}>
+        <span class="player-name">{getAvatarData(player.selectedAvatar).name}</span>
+        <span class="score">{score}</span>
+        {#if isLeading && Object.values($gameState.scoreboard || {}).filter(s => s === score).length === 1}
+          <span class="leader-badge">👑</span>
+        {/if}
+      </li>
     {/each}
   </ul>
 </div>
@@ -33,12 +44,43 @@
   padding: 0;
   margin: 0 0 1rem 0;
 }
+.scoreboard .round-info {
+  font-size: 0.9rem;
+  color: #7f8c8d;
+  margin-bottom: 1rem;
+  font-weight: 500;
+}
+.scoreboard ul {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem 0;
+}
 .scoreboard li {
   font-size: 1.15rem;
-  margin: 0.25rem 0;
+  margin: 0.5rem 0;
   color: #34495e;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 0.5rem;
+  border-radius: 6px;
+  transition: background-color 0.2s;
+}
+.scoreboard li.leading {
+  background-color: #fff9e6;
+  font-weight: 600;
+}
+.scoreboard .player-name {
+  flex: 1;
+  text-align: left;
+}
+.scoreboard .score {
+  font-weight: bold;
+  min-width: 50px;
+  text-align: right;
+}
+.scoreboard .leader-badge {
+  margin-left: 0.5rem;
+  font-size: 1.2rem;
 }
 </style>
