@@ -1,2 +1,10 @@
-import io  from "socket.io-client";
-export const socket = io("http://localhost:3000"); // replace with deployed server URL later
+import io from 'socket.io-client';
+
+const configuredSocketUrl = import.meta.env.VITE_SOCKET_URL?.trim();
+const socketUrl =
+  configuredSocketUrl ||
+  (import.meta.env.PROD ? window.location.origin : 'http://localhost:3000');
+
+export const socket = io(socketUrl, {
+  transports: ['websocket', 'polling']
+});
