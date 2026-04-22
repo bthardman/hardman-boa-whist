@@ -16,6 +16,13 @@
         return seq;
       })()
     : [];
+
+  function isTricksWarning(player: Player): boolean {
+    if (!$gameState || $gameState.state !== 'tricks') return false;
+    if (typeof player.bid !== 'number') return false;
+    if (player.tricksWon > player.bid) return true;
+    return player.tricksWon + player.hand.length < player.bid;
+  }
 </script>
 
 {#if $gameState && $gameState.roundNumber > 0}
@@ -48,16 +55,22 @@
       <div class="hand-table">
         <div class="hand-row header">
           <span class="col-name">Player</span>
-          <span class="col-bid">Bid</span>
-          <span class="col-tricks">Tricks</span>
+          <span class="col-bid"><span class="cell-icon" aria-hidden="true">🎯</span> Bid</span>
+          <span class="col-tricks"><span class="cell-icon" aria-hidden="true">🃏</span> Tricks</span>
         </div>
         {#each biddingSequence as player}
           <div class="hand-row" class:you={$localPlayer && player.playerId === $localPlayer.playerId}>
             <span class="col-name">{getAvatarData(player.selectedAvatar).name}{#if $localPlayer && player.playerId === $localPlayer.playerId} (you){/if}</span>
             <span class="col-bid">
-              {typeof player.bid === 'number' ? player.bid : '—'}
+              <span class="cell-value-chip bid-chip">
+                {typeof player.bid === 'number' ? player.bid : '—'}
+              </span>
             </span>
-            <span class="col-tricks">{player.tricksWon}</span>
+            <span class="col-tricks" class:warning={isTricksWarning(player)}>
+              <span class="cell-value-chip tricks-chip" class:warning-chip={isTricksWarning(player)}>
+                {player.tricksWon}
+              </span>
+            </span>
           </div>
         {/each}
       </div>
@@ -268,5 +281,42 @@
   .col-tricks {
     text-align: right;
     min-width: 2.5em;
+  }
+
+  .cell-icon {
+    margin-right: 0.2rem;
+    opacity: 0.95;
+  }
+
+  .cell-value-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.1rem 0.35rem;
+    border-radius: 999px;
+    border: 1px solid rgba(60, 84, 110, 0.2);
+    background: rgba(255, 255, 255, 0.9);
+    font-weight: 600;
+  }
+
+  .bid-chip {
+    border-color: rgba(33, 102, 172, 0.28);
+    background: rgba(224, 240, 255, 0.85);
+  }
+
+  .tricks-chip {
+    border-color: rgba(74, 112, 57, 0.28);
+    background: rgba(231, 245, 229, 0.9);
+  }
+
+  .col-tricks.warning {
+    color: #b30000;
+  }
+
+  .warning-chip {
+    border-color: rgba(200, 20, 20, 0.55);
+    background: linear-gradient(180deg, rgba(255, 225, 225, 0.95), rgba(255, 203, 203, 0.9));
+    box-shadow: 0 0 0 1px rgba(255, 150, 150, 0.45);
+    font-weight: 700;
   }
 </style>

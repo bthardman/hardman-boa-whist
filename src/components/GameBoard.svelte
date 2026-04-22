@@ -15,9 +15,11 @@
   let winnerMessage: string | null = null;
   let showWinner = false;
   let previousTrickLength = 0;
+  let previousTotalTricksWon = 0;
   let scoreboardOpen = false;
   let showTrickCollect = false;
   let trickCollectTargetClass = 'to-center';
+  let trickCollectCardCount = 0;
   let trickCollectTimer: ReturnType<typeof setTimeout> | null = null;
   let turnPulsePlayerId: string | null = null;
 
@@ -86,7 +88,9 @@
     if (n === 0 || winnerIndex < 0 || $localPlayerIndex < 0) return 'to-center';
     const stepFromLocal = (winnerIndex - $localPlayerIndex + n) % n;
     if (stepFromLocal === 0) return 'to-local';
-    return `to-seat-${stepFromLocal - 1}`;
+    const opponentSeat = stepFromLocal - 1;
+    const opponentTotal = Math.max(1, n - 1);
+    return `to-${opponentTotal}-seat-${opponentSeat}`;
   }
 
   function isTricksWarning(player: Player): boolean {
@@ -143,7 +147,12 @@
   $: if ($gameState?.state === 'tricks') {
     const currentTrickLength = $gameState.currentTrick.length;
     const numPlayers = $gameState.players?.length || 0;
-    if (previousTrickLength === numPlayers && currentTrickLength === 0 && numPlayers > 0) {
+    const totalTricksWon = $gameState.players.reduce((sum, p) => sum + (p.tricksWon || 0), 0);
+
+    // Trigger collect animation when a trick has actually been awarded.
+    // This is more reliable than waiting for a transient full-trick state.
+    if (totalTricksWon > previousTotalTricksWon && currentTrickLength === 0 && numPlayers > 0) {
+      trickCollectCardCount = numPlayers;
       const winner = $gameState.players[$gameState.currentPlayer];
       if (winner) {
         const winnerName = getAvatarData(winner.selectedAvatar).name;
@@ -160,7 +169,8 @@
       if (trickCollectTimer) clearTimeout(trickCollectTimer);
       trickCollectTimer = setTimeout(() => {
         showTrickCollect = false;
-      }, 1300);
+        trickCollectCardCount = 0;
+      }, 1650);
       setTimeout(() => {
         turnPulsePlayerId = null;
       }, 1300);
@@ -170,8 +180,10 @@
       }, 2000);
     }
     previousTrickLength = currentTrickLength;
+    previousTotalTricksWon = totalTricksWon;
   } else {
     previousTrickLength = 0;
+    previousTotalTricksWon = $gameState?.players?.reduce((sum, p) => sum + (p.tricksWon || 0), 0) || 0;
   }
 
   // Smart hand sort: alternate red/black where possible, hearts on the right.
@@ -382,9 +394,20 @@
 
           {#if showTrickCollect}
             <div class="trick-collect {trickCollectTargetClass}" aria-hidden="true">
-              <div class="trick-collect-card tc-1"></div>
-              <div class="trick-collect-card tc-2"></div>
-              <div class="trick-collect-card tc-3"></div>
+              {#each Array(Math.max(2, trickCollectCardCount)).fill(0).map((_, i) => i) as i (i)}
+                {@const centerOffset = i - (Math.max(2, trickCollectCardCount) - 1) / 2}
+                <div
+                  class="trick-collect-card"
+                  style="
+                    --from-x: {centerOffset * 20}px;
+                    --from-y: {Math.abs(centerOffset) * -8}px;
+                    --from-r: {centerOffset * 9}deg;
+                    --pile-x: {centerOffset * 1.6}px;
+                    --pile-y: {i * 1.2}px;
+                    --pile-r: {centerOffset * 1.2}deg;
+                  "
+                ></div>
+              {/each}
             </div>
           {/if}
         </div>
@@ -848,9 +871,10 @@
   }
   .winner-banner {
     position: absolute;
-    top: 40%;
-    left: 50%;
-    transform: translate(-50%, -50%);
+    top: clamp(8px, 6%, 24px);
+    right: clamp(8px, 2vw, 20px);
+    left: auto;
+    transform: none;
     background: rgba(255, 255, 255, 0.9);
     padding: clamp(0.6rem, 2vw, 1rem) clamp(1rem, 3vw, 2rem);
     border-radius: clamp(8px, 2vw, 12px);
@@ -980,7 +1004,7 @@
     z-index: 34;
     pointer-events: none;
     opacity: 0;
-    animation: trickCollectBase 1.25s cubic-bezier(0.2, 0.75, 0.2, 1) forwards;
+    animation: trickCollectTravel 1.25s cubic-bezier(0.2, 0.75, 0.2, 1) forwards;
     filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.3));
   }
   .trick-collect-card {
@@ -994,52 +1018,58 @@
       0 0 0 2px rgba(255, 227, 118, 0.36),
       0 10px 18px rgba(0, 0, 0, 0.25),
       0 0 20px rgba(255, 227, 118, 0.45);
+    left: 8px;
+    top: 8px;
+    animation: trickCollectCollapse 1.25s cubic-bezier(0.2, 0.75, 0.2, 1) forwards;
   }
-  .trick-collect-card.tc-1 { transform: translate(0px, 0px) rotate(-8deg); }
-  .trick-collect-card.tc-2 { transform: translate(6px, 2px) rotate(1deg); }
-  .trick-collect-card.tc-3 { transform: translate(12px, 4px) rotate(9deg); }
 
   .trick-collect.to-local {
     --collect-x: 0px;
     --collect-y: 240px;
   }
-  .trick-collect.to-seat-0 {
-    --collect-x: -330px;
-    --collect-y: -200px;
-  }
-  .trick-collect.to-seat-1 {
-    --collect-x: -150px;
-    --collect-y: -230px;
-  }
-  .trick-collect.to-seat-2 {
-    --collect-x: 0px;
-    --collect-y: -250px;
-  }
-  .trick-collect.to-seat-3 {
-    --collect-x: 160px;
-    --collect-y: -230px;
-  }
-  .trick-collect.to-seat-4 {
-    --collect-x: 330px;
-    --collect-y: -200px;
-  }
+  .trick-collect.to-1-seat-0 { --collect-x: 0px; --collect-y: -252px; }
+  .trick-collect.to-2-seat-0 { --collect-x: -220px; --collect-y: -220px; }
+  .trick-collect.to-2-seat-1 { --collect-x: 220px; --collect-y: -220px; }
+  .trick-collect.to-3-seat-0 { --collect-x: -300px; --collect-y: -205px; }
+  .trick-collect.to-3-seat-1 { --collect-x: 0px; --collect-y: -258px; }
+  .trick-collect.to-3-seat-2 { --collect-x: 300px; --collect-y: -205px; }
+  .trick-collect.to-4-seat-0 { --collect-x: -360px; --collect-y: -190px; }
+  .trick-collect.to-4-seat-1 { --collect-x: -170px; --collect-y: -248px; }
+  .trick-collect.to-4-seat-2 { --collect-x: 170px; --collect-y: -248px; }
+  .trick-collect.to-4-seat-3 { --collect-x: 360px; --collect-y: -190px; }
+  .trick-collect.to-5-seat-0 { --collect-x: -380px; --collect-y: -176px; }
+  .trick-collect.to-5-seat-1 { --collect-x: -230px; --collect-y: -232px; }
+  .trick-collect.to-5-seat-2 { --collect-x: 0px; --collect-y: -262px; }
+  .trick-collect.to-5-seat-3 { --collect-x: 230px; --collect-y: -232px; }
+  .trick-collect.to-5-seat-4 { --collect-x: 380px; --collect-y: -176px; }
   .trick-collect.to-center {
     --collect-x: 0px;
     --collect-y: -120px;
   }
 
-  @keyframes trickCollectBase {
+  @keyframes trickCollectTravel {
     0% {
       opacity: 1;
       transform: translate(-50%, -50%) scale(1.06);
     }
     35% {
       opacity: 1;
-      transform: translate(-50%, -50%) scale(1.16);
+      transform: translate(-50%, -50%) scale(1.1);
     }
     100% {
       opacity: 0;
       transform: translate(calc(-50% + var(--collect-x, 0px)), calc(-50% + var(--collect-y, -120px))) scale(0.38);
+    }
+  }
+  @keyframes trickCollectCollapse {
+    0% {
+      transform: translate(var(--from-x, 0px), var(--from-y, 0px)) rotate(var(--from-r, 0deg));
+    }
+    40% {
+      transform: translate(var(--pile-x, 0px), var(--pile-y, 0px)) rotate(var(--pile-r, 0deg));
+    }
+    100% {
+      transform: translate(var(--pile-x, 0px), var(--pile-y, 0px)) rotate(var(--pile-r, 0deg));
     }
   }
   @keyframes turnPulseRing {
@@ -1237,6 +1267,15 @@
       min-width: clamp(240px, 70vw, 300px);
       min-height: clamp(110px, 20vh, 160px);
     }
+    .winner-banner {
+      top: clamp(6px, 4%, 18px);
+      right: clamp(6px, 2vw, 14px);
+      padding: clamp(0.45rem, 1.4vw, 0.75rem) clamp(0.7rem, 2.2vw, 1.2rem);
+      font-size: clamp(0.85rem, 2.4vw, 1.05rem);
+      max-width: min(46vw, 260px);
+      white-space: normal;
+      text-align: center;
+    }
   }
 
   /* ——— Phone (<= 768px) ——— */
@@ -1300,6 +1339,12 @@
       width: clamp(48px, 10vw, 68px);
       height: clamp(72px, 14vw, 100px);
     }
+    .winner-banner {
+      top: clamp(6px, 3%, 14px);
+      right: clamp(6px, 2vw, 10px);
+      max-width: min(48vw, 210px);
+      font-size: clamp(0.78rem, 2.6vw, 0.95rem);
+    }
     .local-player-panel :global(.card) {
       width: 52px;
       height: 78px;
@@ -1327,6 +1372,11 @@
     }
     .table-zone {
       top: clamp(80px, 24%, 140px);
+    }
+    .winner-banner {
+      max-width: min(55vw, 190px);
+      font-size: clamp(0.72rem, 3vw, 0.88rem);
+      padding: 0.35rem 0.6rem;
     }
   }
 

@@ -10,6 +10,7 @@
 
   let isPlayable = false;
   let isTurn = false;
+  let mustFollowSuit = false;
 
   $: if ($gameState && $localPlayer !== undefined) {
     const state = $gameState;
@@ -21,18 +22,22 @@
 
       if (!isTurn) {
         isPlayable = false;
+        mustFollowSuit = false;
       } else if (!state.currentTrick.length) {
         isPlayable = true;
+        mustFollowSuit = false;
       } else {
         const localHand = $localPlayer.hand;
         const suitLed = state.currentTrick[0].card.suit;
         const hasSuit = localHand.some(c => c.card.suit === suitLed);
+        mustFollowSuit = hasSuit;
         isPlayable = hasSuit ? card.suit === suitLed : true;
       }
     }
   } else {
     isPlayable = false;
     isTurn = false;
+    mustFollowSuit = false;
   }
 
   function playCard() {
@@ -58,6 +63,9 @@
 
 <div
   class="card {isPlayable ? 'playable' : 'unplayable'} {$gameState?.state === 'bidding' ? 'viewing' : ''}"
+  class:must-follow={mustFollowSuit}
+  class:must-follow-valid={mustFollowSuit && isPlayable}
+  class:must-follow-invalid={mustFollowSuit && !isPlayable}
   role="button"
   tabindex={isPlayable ? 0 : -1}
   aria-disabled={!isPlayable}
@@ -107,6 +115,20 @@
   .card.unplayable {
     cursor: not-allowed;
     opacity: 0.6;
+  }
+  .card.must-follow-invalid {
+    opacity: 0.42;
+    filter: brightness(0.72) saturate(0.82);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
+  }
+  .card.must-follow-valid {
+    transform: translateY(-6px);
+    box-shadow:
+      0 8px 18px rgba(0, 0, 0, 0.35),
+      0 0 0 2px rgba(255, 228, 135, 0.75);
+  }
+  .card.must-follow-valid:hover {
+    transform: translateY(-12px) scale(1.05);
   }
   /* During bidding, show cards at full opacity so player can see their hand clearly */
   .card.viewing {
