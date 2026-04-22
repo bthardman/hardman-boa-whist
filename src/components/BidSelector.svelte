@@ -1,5 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  // (no card rendering here - BidSelector only shows bid buttons)
+
   export let forbidden: number | null = null;
   export let playerName: string = '';
 
@@ -10,45 +12,51 @@
     dispatch('bid', { bid });
   }
 </script>
-
-<div class="bid-title">
-  {playerName}, select your bid for tricks:
-</div>
 <div class="bid-container">
-  {#each Array(8).fill(0).map((_, i) => i) as num}
-    <button
-      type="button"
-      class="bid-card {forbidden !== null && num === forbidden ? 'disabled' : ''}"
-      on:click={() => selectBid(num)}
-      disabled={forbidden !== null && num === forbidden}
-      aria-disabled={forbidden !== null && num === forbidden}
-    >
-      {num}
-    </button>
-  {/each}
+  <div class="bid-container">
+    {#each Array(8).fill(0).map((_, i) => i) as num}
+      <button
+        type="button"
+        class="bid-card {forbidden !== null && num === forbidden ? 'disabled' : ''}"
+        on:click={() => selectBid(num)}
+        disabled={forbidden !== null && num === forbidden}
+        aria-disabled={forbidden !== null && num === forbidden}
+      >
+        {num}
+      </button>
+    {/each}
+  </div>
 </div>
 
 <style>
+/* Horizontal row of 8 bid buttons that always fits the available width */
 .bid-container {
   display: flex;
-  flex-wrap: wrap;
-  gap: clamp(0.5rem, 2vw, 1rem);
+  flex-direction: row;
   justify-content: center;
-  margin: clamp(1rem, 3vh, 2rem) 0;
-  padding: 0 0.5rem;
+  align-items: center;
+  gap: clamp(0.2rem, 0.5vw, 0.4rem);
+  margin: 0.4vh auto;
+  padding: 0;
+  width: fit-content;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 .bid-card {
-  width: clamp(50px, 12vw, 70px);
-  height: clamp(75px, 18vw, 105px);
-  min-width: 50px;
-  min-height: 75px;
+  flex: 0 1 auto;
+  width: clamp(38px, 8vw, 70px);
+  aspect-ratio: 0.78;
+  min-width: 36px;
+  min-height: 0;
+  max-width: 70px;
+  max-height: 92px;
   background: linear-gradient(135deg, #e0eafc 0%, #cfdef3 100%);
   border-radius: 10px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.10);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: clamp(1.5rem, 5vw, 2rem);
+  font-size: clamp(1rem, 3.2vw, 1.8rem);
   font-weight: bold;
   color: #2c3e50;
   cursor: pointer;
@@ -56,6 +64,8 @@
   user-select: none;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+  border: 1px solid rgba(44, 62, 80, 0.2);
+  padding: 0;
 }
 .bid-card:hover {
   transform: scale(1.08);
@@ -74,31 +84,63 @@
 .bid-title {
   text-align: center;
   font-size: clamp(1rem, 3vw, 1.2rem);
-  margin-bottom: clamp(0.75rem, 2vh, 1rem);
+  margin-bottom: clamp(0.5rem, 1.5vh, 0.9rem);
   color: #34495e;
   padding: 0 1rem;
   line-height: 1.4;
 }
 
-@media (max-width: 768px) {
+/* Scale down on narrower viewports, but keep 8 in one row */
+@media (max-width: 900px) {
   .bid-container {
-    gap: 0.75rem;
+    gap: 0.3rem;
   }
   .bid-card {
-    width: 55px;
-    height: 82px;
-    font-size: 1.75rem;
+    width: clamp(38px, 7vw, 58px);
+    max-width: 58px;
+    max-height: 76px;
+    font-size: clamp(0.9rem, 2.6vw, 1.2rem);
+    border-radius: 8px;
   }
 }
 
-@media (max-width: 480px) {
+@media (max-width: 600px) {
   .bid-container {
-    gap: 0.5rem;
+    gap: 0.22rem;
   }
   .bid-card {
-    width: 50px;
-    height: 75px;
-    font-size: 1.5rem;
+    width: clamp(36px, 9vw, 48px);
+    max-width: 48px;
+    max-height: 64px;
+    font-size: clamp(0.85rem, 3vw, 1.05rem);
+    border-radius: 7px;
   }
 }
+
+@media (max-width: 430px) {
+  .bid-container {
+    gap: 0.18rem;
+  }
+  .bid-card {
+    width: clamp(34px, 10vw, 42px);
+    max-width: 42px;
+    max-height: 56px;
+    font-size: 0.92rem;
+    border-radius: 6px;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+  .bid-container {
+    gap: 0.22rem;
+    margin: 0.2vh 0;
+  }
+  .bid-card {
+    width: clamp(38px, 6vw, 52px);
+    max-width: 52px;
+    max-height: 64px;
+    font-size: clamp(0.85rem, 2vw, 1.05rem);
+  }
+}
+
 </style>

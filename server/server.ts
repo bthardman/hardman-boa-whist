@@ -8,7 +8,7 @@ import { createDeck } from './utils/cardUtils.ts';
 import { calculateTrickWinner, canPlayCard, dealCards } from './utils/gameLogic.ts';
 import { GameStateMachine } from './utils/gameStateMachine.ts';
 import { calculateRoundScores, updateTotalScores, checkGameEnd, findGameWinner, checkRoundEnd } from './utils/scoreCalculator.ts';
-import { isValidBid, getForbiddenBid } from './utils/biddingRules.ts';
+import { isValidBid } from './utils/biddingRules.ts';
 
 const app = express();
 const server = http.createServer(app);
@@ -20,6 +20,64 @@ const io = new Server(server, {
 });
 
 const roomManager = new RoomManager();
+
+function startNextRoundInternal(roomId: string, isInitialStart = false): boolean {
+  const room = roomManager.getRoom(roomId);
+  if (!room) return false;
+
+  room.roundNumber++;
+  const deck = createDeck();
+  const handSize = 7;
+  dealCards(deck, room.players, handSize);
+
+  // Rotate dealer clockwise after each completed round (not before the very first round)
+  if (!isInitialStart) {
+    room.firstPlayer = (room.firstPlayer + 1) % room.players.length;
+  }
+
+  room.currentTrick = [];
+  room.players.forEach((p) => {
+    p.tricksWon = 0;
+    p.bid = undefined;
+  });
+
+  GameStateMachine.transition(room, 'bidding');
+  room.currentPlayer = room.firstPlayer;
+  return true;
+}
+
+function finishRoundAndAdvanceOrEnd(roomId: string): void {
+  const room = roomManager.getRoom(roomId);
+  if (!room) return;
+
+  const roundScores = calculateRoundScores(room);
+  updateTotalScores(room, roundScores);
+
+  if (checkGameEnd(room)) {
+    const winner = findGameWinner(room);
+    if (winner) {
+      room.winner = winner;
+      GameStateMachine.transition(room, 'winner');
+    }
+    io.to(roomId).emit('state_updated', room);
+    return;
+  }
+
+  GameStateMachine.transition(room, 'round_end');
+  io.to(roomId).emit('state_updated', room);
+
+  // Auto-advance after showing round scores briefly.
+  const roundToAdvance = room.roundNumber;
+  setTimeout(() => {
+    const latest = roomManager.getRoom(roomId);
+    if (!latest) return;
+    if (latest.state !== 'round_end' || latest.roundNumber !== roundToAdvance) return;
+
+    if (startNextRoundInternal(roomId, false)) {
+      io.to(roomId).emit('state_updated', latest);
+    }
+  }, 12000);
+}
 
 io.on('connection', (socket) => {
   console.log('Client connected', socket.id);
@@ -104,27 +162,9 @@ io.on('connection', (socket) => {
     if (room.roundNumber === 0) {
       room.scoreboard = {};
     }
-
-    // Start new round
-    room.roundNumber++;
-    const deck = createDeck();
-    const handSize = 7;
-    dealCards(deck, room.players, handSize);
-
-    // Rotate dealer (firstPlayer) clockwise each round
-    room.firstPlayer = (room.firstPlayer + 1) % room.players.length;
-
-    // Reset round state
-    room.currentTrick = [];
-    room.players.forEach(p => {
-      p.tricksWon = 0;
-      p.bid = undefined;
-    });
-    
-    GameStateMachine.transition(room, 'bidding');
-    room.currentPlayer = room.firstPlayer; // Bidding starts with dealer
-
-    io.to(roomId).emit('state_updated', room);
+    if (startNextRoundInternal(roomId, true)) {
+      io.to(roomId).emit('state_updated', room);
+    }
   });
 
   socket.on('playCard', ({ roomId, card }: { roomId: string, card: OwnedCard }) => {
@@ -170,7 +210,12 @@ io.on('connection', (socket) => {
         room.players[winnerIndex].tricksWon++;
         room.currentTrick = [];
         room.currentPlayer = winnerIndex;
-        room.firstPlayer = winnerIndex;
+      }
+
+      // If all hands are empty, score round and progress.
+      if (checkRoundEnd(room)) {
+        finishRoundAndAdvanceOrEnd(roomId);
+        return;
       }
     } else {
       // Move to next player
@@ -190,7 +235,11 @@ io.on('connection', (socket) => {
     winningPlayer.tricksWon++;
     room.currentTrick = [];
     room.currentPlayer = winner;
-    room.firstPlayer = winner;
+
+    if (checkRoundEnd(room)) {
+      finishRoundAndAdvanceOrEnd(roomId);
+      return;
+    }
 
     io.to(roomId).emit('state_updated', room);
   });
@@ -254,26 +303,9 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // Start next round
-    room.roundNumber++;
-    const deck = createDeck();
-    const handSize = 7;
-    dealCards(deck, room.players, handSize);
-
-    // Rotate dealer (firstPlayer) clockwise each round
-    room.firstPlayer = (room.firstPlayer + 1) % room.players.length;
-
-    // Reset round state
-    room.currentTrick = [];
-    room.players.forEach(p => {
-      p.tricksWon = 0;
-      p.bid = undefined;
-    });
-    
-    GameStateMachine.transition(room, 'bidding');
-    room.currentPlayer = room.firstPlayer; // Bidding starts with dealer
-
-    io.to(roomId).emit('state_updated', room);
+    if (startNextRoundInternal(roomId, false)) {
+      io.to(roomId).emit('state_updated', room);
+    }
   });
 });
 

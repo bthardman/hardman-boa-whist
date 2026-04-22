@@ -3,7 +3,6 @@
   import type {  OwnedCard } from '../../shared/types';
   import { socket } from '../socket';
   import { fly } from 'svelte/transition';
-  import { get } from 'svelte/store';
 
   export let ownedCard: OwnedCard;
 
@@ -12,29 +11,28 @@
   let isPlayable = false;
   let isTurn = false;
 
-  $: {
-    const state = get(gameState);
+  $: if ($gameState && $localPlayer !== undefined) {
+    const state = $gameState;
     if (!state) {
       isPlayable = false;
       isTurn = false;
-    } else if ($localPlayer) {
-      // Only allow playing cards during 'tricks' phase and if it's the local player's turn
+    } else {
       isTurn = state.currentPlayer === $localPlayerIndex && state.state === 'tricks';
 
       if (!isTurn) {
         isPlayable = false;
       } else if (!state.currentTrick.length) {
-        // first card of trick
         isPlayable = true;
       } else {
-        // must follow suit if possible
-        // Find the local player's hand
         const localHand = $localPlayer.hand;
         const suitLed = state.currentTrick[0].card.suit;
         const hasSuit = localHand.some(c => c.card.suit === suitLed);
         isPlayable = hasSuit ? card.suit === suitLed : true;
       }
     }
+  } else {
+    isPlayable = false;
+    isTurn = false;
   }
 
   function playCard() {
@@ -59,7 +57,7 @@
 </script>
 
 <div
-  class="card {isPlayable ? 'playable' : 'unplayable'}"
+  class="card {isPlayable ? 'playable' : 'unplayable'} {$gameState?.state === 'bidding' ? 'viewing' : ''}"
   role="button"
   tabindex={isPlayable ? 0 : -1}
   aria-disabled={!isPlayable}
@@ -109,5 +107,9 @@
   .card.unplayable {
     cursor: not-allowed;
     opacity: 0.6;
+  }
+  /* During bidding, show cards at full opacity so player can see their hand clearly */
+  .card.viewing {
+    opacity: 1;
   }
 </style>

@@ -89,6 +89,7 @@
   }
 </script>
 
+<div class="lobby-wrapper">
 <header class="app-header">
     <img src="/logo/logo.png" alt="Game Logo" class="app-logo" />
 </header>
@@ -149,6 +150,7 @@
   {canStartGame($gameState.players) ? 'Start Game' : 'Need at least 2 players with selected avatars'}
 </button>
 {/if}
+</div>
 
 <style>
   .app-header {
@@ -172,10 +174,27 @@
     margin: 0;
     padding: 0;
     box-sizing: border-box;
-    min-height: 100vh;
-    width: 100vw;
+    min-height: 100dvh;
+    width: 100%;
     background: #E6F5FA !important;
     transition: background 0.3s;
+  }
+  :global(html),
+  :global(body),
+  :global(#app) {
+    width: 100%;
+    height: 100%;
+  }
+
+  .lobby-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    min-height: 100dvh;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0 clamp(0.5rem, 2vw, 1rem);
   }
 
   .lobby {
@@ -183,8 +202,8 @@
     grid-template-columns: repeat(auto-fit, minmax(clamp(200px, 25vw, 280px), 1fr));
     gap: clamp(1rem, 3vw, 2rem);
     max-width: min(900px, 95vw);
+    width: 100%;
     margin: 0 auto;
-    min-height: clamp(400px, 60vh, 500px);
     align-items: stretch;
     padding: 0 clamp(0.5rem, 2vw, 1rem);
   }
@@ -198,6 +217,105 @@
   @media (max-width: 480px) {
     .lobby {
       grid-template-columns: 1fr;
+    }
+  }
+
+  /* Landscape phone/tablet: fit all 6 avatars in one row with no scrolling */
+  @media (orientation: landscape) and (max-height: 600px) {
+    .lobby-wrapper {
+      height: 100dvh;
+      max-height: 100dvh;
+      overflow: hidden;
+      justify-content: flex-start;
+      padding: 0 0.6vw;
+    }
+    .app-header {
+      margin-top: 0.4vh;
+      margin-bottom: 0.3vh;
+      flex: 0 0 auto;
+    }
+    .app-logo {
+      max-width: min(22vw, 160px);
+      max-height: min(14vh, 70px);
+    }
+    .lobby {
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 0.6vw;
+      max-width: 100vw;
+      padding: 0 0.6vw;
+      flex: 1 1 auto;
+      min-height: 0;
+      align-items: center;
+    }
+    .player-card {
+      padding: 0.5vh 0.4vw;
+      border-radius: 8px;
+      border-width: 2px;
+      height: auto;
+    }
+    .player-name {
+      font-size: clamp(0.7rem, 2vh, 0.9rem);
+      margin-bottom: 0.4vh;
+    }
+    .avatar-options {
+      margin-bottom: 0.4vh;
+    }
+    .avatar-option {
+      width: clamp(40px, 11vh, 62px);
+      height: clamp(40px, 11vh, 62px);
+      border-width: 2px;
+    }
+    .option-avatar {
+      width: clamp(36px, 9.8vh, 54px);
+      height: clamp(36px, 9.8vh, 54px);
+    }
+    .player-status {
+      font-size: clamp(0.62rem, 1.7vh, 0.8rem);
+    }
+    .selection-indicator {
+      font-size: 0.55rem;
+      padding: 1px 4px;
+      bottom: -4px;
+    }
+    .start-button {
+      margin: 0.5vh auto;
+      padding: 0.7vh 1.6vw;
+      font-size: clamp(0.78rem, 2vh, 0.95rem);
+      min-height: 32px;
+      flex: 0 0 auto;
+    }
+    .error-message {
+      padding: 0.4rem 0.8rem;
+      font-size: 0.8rem;
+      margin: 0.4vh auto;
+    }
+  }
+
+  /* Very tight landscape (iPhone SE landscape = 667×375) */
+  @media (orientation: landscape) and (max-height: 420px) {
+    .app-logo {
+      max-width: min(18vw, 130px);
+      max-height: min(12vh, 54px);
+    }
+    .player-name {
+      font-size: clamp(0.62rem, 1.8vh, 0.78rem);
+      margin-bottom: 0.2vh;
+    }
+    .avatar-option {
+      width: clamp(34px, 12vh, 50px);
+      height: clamp(34px, 12vh, 50px);
+    }
+    .option-avatar {
+      width: clamp(30px, 10.5vh, 44px);
+      height: clamp(30px, 10.5vh, 44px);
+    }
+    .player-status {
+      font-size: clamp(0.55rem, 1.6vh, 0.72rem);
+    }
+    .start-button {
+      padding: 0.5vh 1.2vw;
+      font-size: clamp(0.7rem, 1.8vh, 0.85rem);
+      min-height: 28px;
     }
   }
   
