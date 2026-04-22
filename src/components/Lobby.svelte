@@ -21,6 +21,7 @@
   onMount(() => {
     // Set body class for background
     document.body.classList.add('lobby-bg');
+    document.documentElement.classList.add('lobby-bg');
 
     // Register error handlers
     registerErrorHandler("avatar_selection_error", handleError);
@@ -30,6 +31,7 @@
       unregisterErrorHandler("avatar_selection_error");
       unregisterErrorHandler("start_game_error");
       document.body.classList.remove('lobby-bg');
+      document.documentElement.classList.remove('lobby-bg');
     };
   });
 
@@ -37,6 +39,7 @@
     unregisterErrorHandler("avatar_selection_error");
     unregisterErrorHandler("start_game_error");
     document.body.classList.remove('lobby-bg');
+    document.documentElement.classList.remove('lobby-bg');
   });
 
   function selectPlayerAvatar(avatarChoice: AvatarChoice) {
@@ -176,11 +179,23 @@
     box-sizing: border-box;
     min-height: 100dvh;
     width: 100%;
-    overflow-y: auto;
+    overflow-y: auto !important;
     overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
     background: #E6F5FA !important;
     transition: background 0.3s;
+  }
+  :global(html.lobby-bg) {
+    height: auto !important;
+    min-height: 100dvh;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+  }
+  :global(body.lobby-bg #app) {
+    height: auto !important;
+    min-height: 100dvh;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
   }
   :global(html),
   :global(body),
