@@ -176,6 +176,9 @@
     box-sizing: border-box;
     min-height: 100dvh;
     width: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
     background: #E6F5FA !important;
     transition: background 0.3s;
   }
@@ -195,6 +198,9 @@
     width: 100%;
     box-sizing: border-box;
     padding: 0 clamp(0.5rem, 2vw, 1rem);
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
   }
 
   .lobby {
