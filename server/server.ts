@@ -1,6 +1,8 @@
 import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import type { OwnedCard } from '../shared/types.ts';
 import { AvatarChoice } from '../shared/types.ts';
 import { RoomManager } from './utils/roomManager.ts';
@@ -12,6 +14,9 @@ import { isValidBid } from './utils/biddingRules.ts';
 
 const app = express();
 const server = http.createServer(app);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const distPath = path.resolve(__dirname, '../dist');
 const allowedOrigins = [
   'http://localhost:5173',
   'http://127.0.0.1:5173',
@@ -30,6 +35,12 @@ const io = new Server(server, {
     },
     methods: ["GET", "POST"]
   }
+});
+
+// Serve the built frontend when available (useful for single-service Render deploys).
+app.use(express.static(distPath));
+app.get(/^(?!\/socket\.io).*/, (_req, res) => {
+  res.sendFile(path.join(distPath, 'index.html'));
 });
 
 const roomManager = new RoomManager();

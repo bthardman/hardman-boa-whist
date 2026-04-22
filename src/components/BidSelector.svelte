@@ -3,7 +3,6 @@
   // (no card rendering here - BidSelector only shows bid buttons)
 
   export let forbidden: number | null = null;
-  export let playerName: string = '';
 
   const dispatch = createEventDispatcher();
 
@@ -13,19 +12,17 @@
   }
 </script>
 <div class="bid-container">
-  <div class="bid-container">
-    {#each Array(8).fill(0).map((_, i) => i) as num}
-      <button
-        type="button"
-        class="bid-card {forbidden !== null && num === forbidden ? 'disabled' : ''}"
-        on:click={() => selectBid(num)}
-        disabled={forbidden !== null && num === forbidden}
-        aria-disabled={forbidden !== null && num === forbidden}
-      >
-        {num}
-      </button>
-    {/each}
-  </div>
+  {#each Array(8).fill(0).map((_, i) => i) as num}
+    <button
+      type="button"
+      class="bid-card {forbidden !== null && num === forbidden ? 'disabled' : ''}"
+      on:click={() => selectBid(num)}
+      disabled={forbidden !== null && num === forbidden}
+      aria-disabled={forbidden !== null && num === forbidden}
+    >
+      {num}
+    </button>
+  {/each}
 </div>
 
 <style>
@@ -81,15 +78,6 @@
   box-shadow: none;
   opacity: 0.6;
 }
-.bid-title {
-  text-align: center;
-  font-size: clamp(1rem, 3vw, 1.2rem);
-  margin-bottom: clamp(0.5rem, 1.5vh, 0.9rem);
-  color: #34495e;
-  padding: 0 1rem;
-  line-height: 1.4;
-}
-
 /* Scale down on narrower viewports, but keep 8 in one row */
 @media (max-width: 900px) {
   .bid-container {

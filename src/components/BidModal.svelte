@@ -36,7 +36,7 @@
         </span>
       {/each}
     </div>
-    <BidSelector playerName="" forbidden={forbiddenBid} on:bid={onBid} />
+    <BidSelector forbidden={forbiddenBid} on:bid={onBid} />
   </div>
 
   <div class="bidding-player-row">
@@ -72,17 +72,19 @@
   .bidding-layout {
     flex: 1 1 auto;
     display: grid;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: minmax(0, 0.6fr) auto minmax(0, 1.4fr);
     gap: clamp(0.6rem, 2vh, 1.2rem);
     padding: clamp(0.75rem, 2vh, 1.1rem) 0.75rem clamp(0.5rem, 2vh, 1rem);
     box-sizing: border-box;
     min-height: 0;
     width: 100%;
     justify-items: center;
-    overflow: visible;
+    overflow: hidden;
   }
 
   .bid-center {
+    grid-row: 2;
+    z-index: 2;
     background: rgba(255, 255, 255, 0.97);
     border-radius: 12px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
@@ -121,15 +123,18 @@
   }
 
   .bidding-player-row {
+    grid-row: 3;
+    align-self: end;
+    position: relative;
     display: flex;
     flex-direction: row;
     align-items: flex-end;
     justify-content: center;
-    gap: clamp(0.5rem, 2vw, 1.2rem);
+    gap: clamp(0.4rem, 1.2vw, 0.8rem);
     min-width: 0;
     min-height: 0;
     width: 100%;
-    padding: 0 0.25rem clamp(0.5rem, 3vh, 1.25rem);
+    padding: 0.25rem 0.6rem max(1rem, 3vh);
     box-sizing: border-box;
   }
   .bidding-hand-stage {
@@ -144,30 +149,35 @@
   }
 
   .bidding-top-meta {
+    position: absolute;
+    right: clamp(0.5rem, 2vw, 1rem);
+    bottom: clamp(0.2rem, 1vh, 0.55rem);
     flex: 0 0 auto;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: flex-end;
     gap: 0.25rem;
-    margin-bottom: clamp(0.25rem, 1.2vh, 0.5rem);
+    min-width: clamp(74px, 14vw, 130px);
+    margin-bottom: clamp(0.2rem, 1vh, 0.45rem);
   }
   .bidding-top-meta .local-avatar {
-    width: clamp(44px, 9vw, 70px);
-    height: clamp(44px, 9vw, 70px);
+    width: clamp(56px, 11vw, 84px);
+    height: clamp(56px, 11vw, 84px);
     border-radius: 50%;
-    border: 2px solid #fff;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    margin: 0;
+    border: clamp(2px, 0.5vw, 3px) solid #fff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    margin-bottom: clamp(0.25rem, 1vh, 0.5rem);
     background: transparent;
     object-fit: contain;
   }
   .bidding-top-meta .local-name {
-    margin: 0;
+    margin-bottom: clamp(0.25rem, 1vh, 0.5rem);
     color: #fff;
     font-weight: 700;
-    font-size: clamp(0.85rem, 2vh, 1.05rem);
-    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+    font-size: clamp(0.9rem, 2.6vw, 1.2rem);
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    text-align: center;
     white-space: nowrap;
   }
 
@@ -182,19 +192,19 @@
   .hand-fanned {
     display: block;
     position: relative;
-    flex: 0 1 auto;
-    min-width: clamp(190px, 50vw, 360px);
-    max-width: 70vw;
-    height: 100%;
-    max-height: 100%;
+    flex: 0 0 auto;
+    min-width: clamp(220px, 58vw, 320px);
+    max-width: 100%;
+    height: clamp(96px, 20vh, 130px);
     width: fit-content;
+    margin: 0 auto;
     pointer-events: auto;
   }
   .local-hand {
-    --hand-half: clamp(20px, 4vw, 32px);
-    --hand-spread: clamp(16px, 3vw, 26px);
-    --hand-rotate: 9deg;
-    --hand-base-y: -4px;
+    --hand-half: clamp(24px, 5vw, 36px);
+    --hand-spread: clamp(22px, 4vw, 32px);
+    --hand-rotate: 14deg;
+    --hand-base-y: -8px;
   }
   .fanned-card {
     position: absolute;
@@ -216,6 +226,7 @@
 
   @media (max-width: 768px) {
     .bidding-layout {
+      grid-template-rows: minmax(0, 0.6fr) auto minmax(0, 1.4fr);
       padding: clamp(0.6rem, 2vh, 1rem) 0.5rem clamp(0.4rem, 2vh, 0.8rem);
       gap: 0.5rem;
     }
@@ -228,47 +239,61 @@
       gap: 0.25rem 0.55rem;
     }
     .bidding-player-row {
-      padding: 0 0.25rem clamp(0.4rem, 2.5vh, 1rem);
-      gap: 0.5rem;
+      padding: 0.25rem 0.4rem max(0.7rem, 2vh);
+      gap: 0.35rem;
+    }
+    .bidding-top-meta {
+      right: clamp(0.25rem, 1.5vw, 0.6rem);
+      bottom: clamp(0.1rem, 0.9vh, 0.3rem);
     }
     .hand-fanned {
-      min-width: clamp(170px, 52vw, 260px);
-      max-width: 62vw;
+      min-width: clamp(170px, 60vw, 240px);
+      height: clamp(84px, 16vh, 110px);
     }
     .local-hand {
-      --hand-half: 20px;
-      --hand-spread: 16px;
-      --hand-rotate: 8deg;
-      --hand-base-y: -2px;
+      --hand-half: 22px;
+      --hand-spread: 19px;
+      --hand-rotate: 12deg;
+      --hand-base-y: -4px;
     }
     .bidding-top-meta .local-avatar {
-      width: 44px;
-      height: 44px;
+      width: clamp(46px, 10vw, 66px);
+      height: clamp(46px, 10vw, 66px);
     }
     .bidding-top-meta .local-name {
-      font-size: 0.8rem;
+      font-size: 0.88rem;
     }
   }
 
   @media (max-width: 430px) {
     .hand-fanned {
-      min-width: 54vw;
-      max-width: 58vw;
+      min-width: clamp(150px, 70vw, 210px);
+      height: clamp(78px, 14vh, 98px);
     }
     .local-hand {
-      --hand-half: 16px;
-      --hand-spread: 13px;
-      --hand-rotate: 7deg;
-      --hand-base-y: -1px;
+      --hand-half: 19px;
+      --hand-spread: 16px;
+      --hand-rotate: 10deg;
+      --hand-base-y: -3px;
     }
     .bidding-top-meta .local-avatar {
-      width: 40px;
-      height: 40px;
+      width: 42px;
+      height: 42px;
+    }
+    .bidding-top-meta {
+      right: 0.2rem;
+      bottom: 0.05rem;
+      min-width: clamp(54px, 18vw, 78px);
+    }
+    .bidding-top-meta .local-name {
+      font-size: 0.8rem;
+      margin-bottom: 0.15rem;
     }
   }
 
   @media (orientation: landscape) and (max-height: 500px) {
     .bidding-layout {
+      grid-template-rows: minmax(0, 0.55fr) auto minmax(0, 1.45fr);
       padding: clamp(0.4rem, 1.5vh, 0.7rem) 0.5rem clamp(0.3rem, 1.5vh, 0.6rem);
       gap: 0.4rem;
     }
@@ -281,18 +306,22 @@
       margin-bottom: 0;
     }
     .bidding-player-row {
-      padding: 0 0.3rem 0.35rem;
-      gap: 0.8rem;
+      padding: 0.15rem 0.35rem 0.5rem;
+      gap: 0.45rem;
+    }
+    .bidding-top-meta {
+      right: 0.35rem;
+      bottom: 0.05rem;
     }
     .hand-fanned {
-      min-width: clamp(200px, 48vw, 320px);
-      max-width: 60vw;
+      min-width: clamp(170px, 56vw, 240px);
+      height: clamp(74px, 22vh, 96px);
     }
     .local-hand {
-      --hand-half: 18px;
-      --hand-spread: 14px;
-      --hand-rotate: 7deg;
-      --hand-base-y: -2px;
+      --hand-half: 20px;
+      --hand-spread: 16px;
+      --hand-rotate: 10deg;
+      --hand-base-y: -3px;
     }
   }
 </style>

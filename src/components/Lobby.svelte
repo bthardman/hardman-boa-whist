@@ -401,10 +401,6 @@
     text-align: center;
   }
   
-  .status-waiting {
-    color: #FF9800;
-  }
-  
   .start-button {
     margin-top: clamp(1rem, 3vh, 2rem);
     padding: clamp(0.75rem, 2vh, 1rem) clamp(1rem, 3vw, 2rem);
