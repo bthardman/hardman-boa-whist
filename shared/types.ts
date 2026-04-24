@@ -2,11 +2,13 @@
 
 export const AvatarChoice = {
   ANGELA: 'angela',
+  AFRODITI: 'afroditi',
   BRAD: 'brad',
   CAROL: 'carol',
   DEREK: 'derek',
   ROWAN: 'rowan',
   TONY: 'tony',
+  VANESSA: 'vanessa',
   UNDEFINED: 'undefined'
 } as const;
 

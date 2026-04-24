@@ -12,6 +12,11 @@ export const avatarDataMap: Record<AvatarChoice, AvatarData> = {
     avatar1: '/avatars/angela_1.png',
     avatar2: '/avatars/angela_2.png'
   },
+  [AvatarChoice.AFRODITI]: {
+    name: 'Afroditi',
+    avatar1: '/avatars/afroditi_1.png',
+    avatar2: '/avatars/afroditi_2.png'
+  },
   [AvatarChoice.BRAD]: {
     name: 'Brad',
     avatar1: '/avatars/brad_1.png',
@@ -36,6 +41,11 @@ export const avatarDataMap: Record<AvatarChoice, AvatarData> = {
     name: 'Tony',
     avatar1: '/avatars/tony_1.png',
     avatar2: '/avatars/tony_2.png'
+  },
+  [AvatarChoice.VANESSA]: {
+    name: 'Vanessa',
+    avatar1: '/avatars/vanessa_1.png',
+    avatar2: '/avatars/vanessa_2.png'
   },
   [AvatarChoice.UNDEFINED]: {
     name: 'Unknown',
