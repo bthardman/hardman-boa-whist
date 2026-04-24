@@ -103,6 +103,25 @@ function finishRoundAndAdvanceOrEnd(roomId: string): void {
   }, 12000);
 }
 
+function resetRoomToLobby(roomId: string): boolean {
+  const room = roomManager.getRoom(roomId);
+  if (!room) return false;
+
+  room.state = 'lobby';
+  room.roundNumber = 0;
+  room.currentPlayer = 0;
+  room.firstPlayer = 0;
+  room.currentTrick = [];
+  room.winner = undefined;
+  room.scoreboard = {};
+  room.players.forEach((p) => {
+    p.hand = [];
+    p.tricksWon = 0;
+    p.bid = undefined;
+  });
+  return true;
+}
+
 io.on('connection', (socket) => {
   console.log('Client connected', socket.id);
 
@@ -116,6 +135,17 @@ io.on('connection', (socket) => {
 
   // --- Player joins lobby ---
   socket.on('join_lobby', ({ roomId, playerId }: { roomId: string, playerId: string }) => {
+    const existingRoom = roomManager.getRoom(roomId);
+    const existingPlayer = existingRoom?.players.find((p) => p.playerId === playerId);
+    const isActiveGame = existingRoom && existingRoom.state !== 'lobby' && existingRoom.state !== 'winner';
+    if (isActiveGame && !existingPlayer) {
+      socket.emit('join_error', {
+        message: 'Game already in progress. Please wait for the next game.'
+      });
+      socket.disconnect(true);
+      return;
+    }
+
     const player = roomManager.joinPlayer(roomId, playerId, socket.id);
     const room = roomManager.getRoom(roomId)!;
     
@@ -174,6 +204,24 @@ io.on('connection', (socket) => {
     if (!room) {
       socket.emit('start_game_error', { message: 'Room not found' });
       return;
+    }
+
+    const removed = room.players.filter((p) => p.selectedAvatar === AvatarChoice.UNDEFINED);
+    if (removed.length > 0) {
+      const removedIds = new Set(removed.map((p) => p.playerId));
+      room.players = room.players.filter((p) => !removedIds.has(p.playerId));
+      removed.forEach((p) => {
+        if (p.socketId) {
+          const s = io.sockets.sockets.get(p.socketId);
+          if (s) {
+            s.emit('join_error', { message: 'Please select an avatar before joining a game.' });
+            s.leave(roomId);
+            s.disconnect(true);
+          }
+        }
+      });
+      room.currentPlayer = 0;
+      room.firstPlayer = 0;
     }
 
     // Check if at least 2 players have selected avatars
@@ -330,6 +378,12 @@ io.on('connection', (socket) => {
     if (startNextRoundInternal(roomId, false)) {
       io.to(roomId).emit('state_updated', room);
     }
+  });
+
+  socket.on('cancel_game', ({ roomId }: { roomId: string }) => {
+    if (!resetRoomToLobby(roomId)) return;
+    const room = roomManager.getRoom(roomId)!;
+    io.to(roomId).emit('state_updated', room);
   });
 });
 

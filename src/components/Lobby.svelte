@@ -8,6 +8,7 @@
   import { registerErrorHandler, unregisterErrorHandler } from '../utils/socketHandlers';
 
   let errorMessage = '';
+  let blockedMessage = '';
 
   function startGame() {
     socket.emit("start_game", { roomId: $roomId });
@@ -18,6 +19,14 @@
     setTimeout(() => errorMessage = '', 3000);
   }
 
+  function handleJoinBlocked(message: string) {
+    blockedMessage = message || 'Unable to join this game.';
+  }
+
+  function refreshPage() {
+    window.location.reload();
+  }
+
   onMount(() => {
     // Set body class for background
     document.body.classList.add('lobby-bg');
@@ -26,10 +35,12 @@
     // Register error handlers
     registerErrorHandler("avatar_selection_error", handleError);
     registerErrorHandler("start_game_error", handleError);
+    registerErrorHandler("join_error", handleJoinBlocked);
 
     return () => {
       unregisterErrorHandler("avatar_selection_error");
       unregisterErrorHandler("start_game_error");
+      unregisterErrorHandler("join_error");
       document.body.classList.remove('lobby-bg');
       document.documentElement.classList.remove('lobby-bg');
     };
@@ -38,6 +49,7 @@
   onDestroy(() => {
     unregisterErrorHandler("avatar_selection_error");
     unregisterErrorHandler("start_game_error");
+    unregisterErrorHandler("join_error");
     document.body.classList.remove('lobby-bg');
     document.documentElement.classList.remove('lobby-bg');
   });
@@ -97,6 +109,13 @@
     <img src="/logo/logo.png" alt="Game Logo" class="app-logo" />
 </header>
 
+{#if blockedMessage}
+  <div class="blocked-screen" role="alert" aria-live="assertive">
+    <h2>Unable to join this game</h2>
+    <p>{blockedMessage}</p>
+    <button type="button" class="blocked-refresh-btn" on:click={refreshPage}>Back to lobby</button>
+  </div>
+{:else}
 {#if errorMessage}
   <div class="error-message">{errorMessage}</div>
 {/if}
@@ -152,6 +171,7 @@
 >
   {canStartGame($gameState.players) ? 'Start Game' : 'Need at least 2 players with selected avatars'}
 </button>
+{/if}
 {/if}
 </div>
 
@@ -216,6 +236,37 @@
     overflow-y: auto;
     overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
+  }
+  .blocked-screen {
+    width: min(92vw, 560px);
+    margin: 1rem auto 0;
+    padding: 1.15rem 1rem;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #fff, #f7f9fc);
+    border: 1px solid rgba(60, 78, 96, 0.2);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    text-align: center;
+    color: #1f2f44;
+  }
+  .blocked-screen h2 {
+    margin: 0 0 0.6rem;
+    font-size: clamp(1.1rem, 3.6vw, 1.5rem);
+  }
+  .blocked-screen p {
+    margin: 0 0 0.9rem;
+    color: #526274;
+  }
+  .blocked-refresh-btn {
+    border: none;
+    border-radius: 8px;
+    background: #004c8c;
+    color: #fff;
+    padding: 0.6rem 1rem;
+    cursor: pointer;
+    font-weight: 700;
+  }
+  .blocked-refresh-btn:hover {
+    background: #0066bb;
   }
 
   .lobby {

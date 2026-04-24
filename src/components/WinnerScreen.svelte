@@ -1,12 +1,13 @@
 <script lang="ts">
   import { gameState } from '../store';
+  import { socket } from '../socket';
   import { getWinnerAvatarUrl } from '../avatarUtils';
   import { getAvatarData } from '../avatarData';
   import type { Player } from '../../shared/types';
 
   function playAgain() {
-    // Reset game by navigating back to lobby
-    window.location.reload();
+    if (!$gameState) return;
+    socket.emit('cancel_game', { roomId: $gameState.roomId });
   }
 
   function getSortedPlayers(): Player[] {
@@ -56,7 +57,7 @@
     </div>
   {/if}
   
-  <button class="play-again-button" on:click={playAgain}>Play Again</button>
+  <button class="play-again-button" on:click={playAgain}>Back to Lobby</button>
 </div>
 
 <style>

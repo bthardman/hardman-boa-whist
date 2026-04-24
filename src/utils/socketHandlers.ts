@@ -79,6 +79,11 @@ export function setupSocketHandlers() {
     if (handler) handler(data.message);
   });
 
+  socket.on("join_error", (data: { message: string }) => {
+    const handler = errorHandlers.get("join_error");
+    if (handler) handler(data.message);
+  });
+
   // Initial sync: catches cases where connect fired before handlers were attached.
   if (socket.connected) {
     localSocketId.set(socket.id);
@@ -111,6 +116,7 @@ export function cleanupSocketHandlers() {
   socket.off("start_game_error");
   socket.off("play_card_error");
   socket.off("bid_error");
+  socket.off("join_error");
 
   if (periodicSyncTimer) {
     clearInterval(periodicSyncTimer);

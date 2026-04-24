@@ -17,11 +17,16 @@
   let previousTrickLength = 0;
   let previousTotalTricksWon = 0;
   let scoreboardOpen = false;
+  let settingsOpen = false;
   let showTrickCollect = false;
   let trickCollectTargetClass = 'to-center';
   let trickCollectCardCount = 0;
   let trickCollectTimer: ReturnType<typeof setTimeout> | null = null;
   let turnPulsePlayerId: string | null = null;
+  let showBidAnnouncement = false;
+  let bidAnnouncementText: string | null = null;
+  let bidAnnouncementTimer: ReturnType<typeof setTimeout> | null = null;
+  let previousBidMap: Record<string, number | undefined> = {};
 
   $: isBiddingLocal =
     $gameState?.state === 'bidding' &&
@@ -36,6 +41,18 @@
   }
   function closeScoreboard() {
     scoreboardOpen = false;
+  }
+  function openSettings() {
+    settingsOpen = true;
+  }
+  function closeSettings() {
+    settingsOpen = false;
+  }
+
+  function cancelGame() {
+    closeScoreboard();
+    closeSettings();
+    socket.emit('cancel_game', { roomId: $roomId });
   }
 
   function startNextRound() {
@@ -117,15 +134,22 @@
       clearTimeout(trickCollectTimer);
       trickCollectTimer = null;
     }
+    if (bidAnnouncementTimer) {
+      clearTimeout(bidAnnouncementTimer);
+      bidAnnouncementTimer = null;
+    }
     stopAllAvatarSwaps();
     document.body.classList.remove('game-bg');
   });
 
   let escapeHandler: ((e: KeyboardEvent) => void) | null = null;
-  $: if (scoreboardOpen) {
+  $: if (scoreboardOpen || settingsOpen) {
     if (escapeHandler) window.removeEventListener('keydown', escapeHandler);
     escapeHandler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeScoreboard();
+      if (e.key === 'Escape') {
+        closeScoreboard();
+        closeSettings();
+      }
     };
     window.addEventListener('keydown', escapeHandler);
   } else if (escapeHandler) {
@@ -184,6 +208,42 @@
   } else {
     previousTrickLength = 0;
     previousTotalTricksWon = $gameState?.players?.reduce((sum, p) => sum + (p.tricksWon || 0), 0) || 0;
+  }
+
+  $: if ($gameState) {
+    if ($gameState.state === 'bidding') {
+      const currentMap: Record<string, number | undefined> = {};
+      for (const p of $gameState.players) currentMap[p.playerId] = p.bid;
+
+      const newlyBid = $gameState.players.find((p) => {
+        const prev = previousBidMap[p.playerId];
+        return typeof p.bid === 'number' && typeof prev !== 'number';
+      });
+
+      if (
+        newlyBid &&
+        (!$localPlayer || newlyBid.playerId !== $localPlayer.playerId)
+      ) {
+        const name = getAvatarData(newlyBid.selectedAvatar).name;
+        bidAnnouncementText = `${name} bid ${newlyBid.bid}`;
+        showBidAnnouncement = true;
+        if (bidAnnouncementTimer) clearTimeout(bidAnnouncementTimer);
+        bidAnnouncementTimer = setTimeout(() => {
+          showBidAnnouncement = false;
+          bidAnnouncementText = null;
+        }, 1600);
+      }
+
+      previousBidMap = currentMap;
+    } else {
+      previousBidMap = {};
+      showBidAnnouncement = false;
+      bidAnnouncementText = null;
+      if (bidAnnouncementTimer) {
+        clearTimeout(bidAnnouncementTimer);
+        bidAnnouncementTimer = null;
+      }
+    }
   }
 
   // Smart hand sort: alternate red/black where possible, hearts on the right.
@@ -275,15 +335,26 @@
         {announcerText || '\u00A0'}
       </div>
       {#if !isBiddingPhase}
-        <button
-          type="button"
-          class="scoreboard-toggle"
-          aria-label="Toggle scoreboard"
-          aria-expanded={scoreboardOpen}
-          on:click={toggleScoreboard}
-        >
-          <span class="scoreboard-icon" aria-hidden="true">📊</span>
-        </button>
+        <div class="top-bar-actions">
+          <button
+            type="button"
+            class="settings-toggle"
+            aria-label="Open settings"
+            aria-expanded={settingsOpen}
+            on:click={openSettings}
+          >
+            ⚙
+          </button>
+          <button
+            type="button"
+            class="scoreboard-toggle"
+            aria-label="Toggle scoreboard"
+            aria-expanded={scoreboardOpen}
+            on:click={toggleScoreboard}
+          >
+            <span class="scoreboard-icon" aria-hidden="true">📊</span>
+          </button>
+        </div>
       {/if}
     </header>
 
@@ -301,7 +372,26 @@
       </div>
     {/if}
 
+    {#if settingsOpen}
+      <div class="settings-overlay" role="dialog" aria-label="Game settings" aria-modal="true">
+        <button
+          type="button"
+          class="settings-backdrop"
+          aria-label="Close settings"
+          on:click={closeSettings}
+        ></button>
+        <div class="settings-panel">
+          <h3>Game Settings</h3>
+          <button type="button" class="settings-end-game-btn" on:click={cancelGame}>End Game</button>
+          <button type="button" class="settings-close-btn" on:click={closeSettings}>Close</button>
+        </div>
+      </div>
+    {/if}
+
     <div class="gameboard-content">
+      {#if isBiddingPhase && showBidAnnouncement && bidAnnouncementText}
+        <div class="bid-banner">{bidAnnouncementText}</div>
+      {/if}
       {#if isBiddingLocal}
         <BidModal
           gameState={$gameState}
@@ -653,6 +743,91 @@
   .scoreboard-icon {
     font-size: 1.2rem;
   }
+  .top-bar-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex: 0 0 auto;
+  }
+  .settings-toggle {
+    flex: 0 0 auto;
+    width: 2.25rem;
+    height: 2.25rem;
+    border: none;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.22);
+    color: #fff;
+    font-size: 1.1rem;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .settings-toggle:hover {
+    background: rgba(255, 255, 255, 0.4);
+  }
+  .settings-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 205;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+  }
+  .settings-backdrop {
+    position: absolute;
+    inset: 0;
+    border: none;
+    background: rgba(0, 0, 0, 0.52);
+    cursor: pointer;
+  }
+  .settings-panel {
+    position: relative;
+    z-index: 1;
+    width: min(92vw, 340px);
+    background: linear-gradient(180deg, #ffffff, #f6f8fb);
+    border: 1px solid rgba(44, 62, 80, 0.14);
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.26);
+    padding: 0.9rem 1rem 1rem;
+    color: #223344;
+  }
+  .settings-panel h3 {
+    margin: 0 0 0.35rem;
+    font-size: 1.05rem;
+  }
+  .settings-panel p {
+    margin: 0 0 0.8rem;
+    font-size: 0.86rem;
+    color: #627387;
+  }
+  .settings-end-game-btn {
+    border: 1px solid rgba(255, 255, 255, 0.34);
+    background: rgba(140, 19, 19, 0.9);
+    color: #fff;
+    border-radius: 8px;
+    padding: 0.55rem 0.7rem;
+    width: 100%;
+    font-size: 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  .settings-end-game-btn:hover {
+    background: rgba(163, 25, 25, 0.95);
+    border-color: rgba(255, 170, 170, 0.5);
+  }
+  .settings-close-btn {
+    margin-top: 0.5rem;
+    width: 100%;
+    border: 1px solid rgba(44, 62, 80, 0.2);
+    background: #fff;
+    color: #2c3e50;
+    border-radius: 8px;
+    padding: 0.5rem 0.7rem;
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
 
   .scoreboard-overlay {
     position: fixed;
@@ -883,6 +1058,33 @@
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
     z-index: 20;
     text-align: center;
+  }
+  .bid-banner {
+    position: absolute;
+    top: clamp(10px, 2.4vh, 22px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255, 255, 255, 0.94);
+    color: #1f2f44;
+    border: 1px solid rgba(44, 62, 80, 0.16);
+    border-radius: 12px;
+    padding: 0.45rem 0.9rem;
+    font-size: clamp(0.86rem, 2.2vw, 1.02rem);
+    font-weight: 700;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2);
+    z-index: 35;
+    pointer-events: none;
+    animation: bidBannerPop 0.22s ease-out;
+  }
+  @keyframes bidBannerPop {
+    from {
+      opacity: 0;
+      transform: translateX(-50%) translateY(-5px) scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0) scale(1);
+    }
   }
 
   .player-hand-stats {
