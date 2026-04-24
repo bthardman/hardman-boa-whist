@@ -795,11 +795,6 @@
     margin: 0 0 0.35rem;
     font-size: 1.05rem;
   }
-  .settings-panel p {
-    margin: 0 0 0.8rem;
-    font-size: 0.86rem;
-    color: #627387;
-  }
   .settings-end-game-btn {
     border: 1px solid rgba(255, 255, 255, 0.34);
     background: rgba(140, 19, 19, 0.9);

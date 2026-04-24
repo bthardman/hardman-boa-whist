@@ -9,9 +9,27 @@
 
   let errorMessage = '';
   let blockedMessage = '';
+  let settingsOpen = false;
+  let localWinningScore = 5;
+  const winningScoreOptions = [1, 2, 3, 4, 5];
+
+  $: localWinningScore = $gameState?.winningScore ?? 5;
 
   function startGame() {
     socket.emit("start_game", { roomId: $roomId });
+  }
+
+  function setWinningScore(score: number) {
+    if (!$gameState || $gameState.state !== 'lobby') return;
+    socket.emit('set_winning_score', { roomId: $roomId, winningScore: score });
+  }
+
+  function toggleSettings() {
+    settingsOpen = !settingsOpen;
+  }
+
+  function closeSettings() {
+    settingsOpen = false;
   }
 
   function handleError(message: string) {
@@ -164,6 +182,11 @@
 </div>
 
 {#if $gameState}
+<div class="lobby-actions-row">
+  <button type="button" class="lobby-settings-btn" on:click={toggleSettings} aria-expanded={settingsOpen}>
+    ⚙ Lobby Settings
+  </button>
+</div>
 <button 
   on:click={startGame} 
   disabled={!canStartGame($gameState.players)}
@@ -171,6 +194,30 @@
 >
   {canStartGame($gameState.players) ? 'Start Game' : 'Need at least 2 players with selected avatars'}
 </button>
+{/if}
+{#if $gameState && settingsOpen}
+  <div class="lobby-settings-overlay" role="dialog" aria-label="Lobby settings" aria-modal="true">
+    <button type="button" class="lobby-settings-backdrop" on:click={closeSettings} aria-label="Close settings"></button>
+    <div class="lobby-settings-panel">
+      <h3>Lobby Settings</h3>
+      <div class="winning-score-picker">
+        <div class="winning-score-label">👑 Target score: {localWinningScore}</div>
+        <div class="winning-score-options">
+          {#each winningScoreOptions as score}
+            <button
+              type="button"
+              class="winning-score-btn"
+              class:active={localWinningScore === score}
+              on:click={() => setWinningScore(score)}
+            >
+              {score}
+            </button>
+          {/each}
+        </div>
+      </div>
+      <button type="button" class="lobby-settings-close" on:click={closeSettings}>Close</button>
+    </div>
+  </div>
 {/if}
 {/if}
 </div>
@@ -490,6 +537,108 @@
     touch-action: manipulation;
     max-width: 95vw;
     word-wrap: break-word;
+  }
+  .lobby-actions-row {
+    margin-top: 0.65rem;
+    margin-bottom: 0.3rem;
+    display: flex;
+    justify-content: center;
+  }
+  .lobby-settings-btn {
+    border: 1px solid rgba(44, 62, 80, 0.25);
+    border-radius: 999px;
+    background: #fff;
+    color: #2c3e50;
+    padding: 0.36rem 0.75rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .lobby-settings-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 260;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+  }
+  .lobby-settings-backdrop {
+    position: absolute;
+    inset: 0;
+    border: none;
+    background: rgba(0, 0, 0, 0.52);
+    cursor: pointer;
+  }
+  .lobby-settings-panel {
+    position: relative;
+    z-index: 1;
+    width: min(92vw, 430px);
+    border-radius: 12px;
+    background: linear-gradient(180deg, #fff, #f7f9fc);
+    border: 1px solid rgba(44, 62, 80, 0.14);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    padding: 0.95rem 0.95rem 0.9rem;
+    text-align: center;
+  }
+  .lobby-settings-panel h3 {
+    margin: 0 0 0.45rem;
+    color: #1f2f44;
+  }
+  .lobby-settings-close {
+    margin-top: 0.45rem;
+    width: 100%;
+    border: 1px solid rgba(44, 62, 80, 0.22);
+    background: #fff;
+    color: #2c3e50;
+    border-radius: 8px;
+    padding: 0.5rem 0.7rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .winning-score-picker {
+    margin-top: 0.75rem;
+    margin-bottom: 0.35rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .winning-score-label {
+    font-size: clamp(0.8rem, 2.1vw, 0.95rem);
+    font-weight: 700;
+    color: #2f3f51;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .winning-score-options {
+    display: inline-flex;
+    gap: 0.35rem;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .winning-score-btn {
+    min-width: 2rem;
+    border: 1px solid rgba(44, 62, 80, 0.22);
+    border-radius: 999px;
+    background: #fff;
+    color: #2c3e50;
+    padding: 0.26rem 0.52rem;
+    font-size: 0.84rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .winning-score-btn.active {
+    background: #004c8c;
+    color: #fff;
+    border-color: #004c8c;
+  }
+  .winning-score-crowns {
+    min-height: 1.1rem;
+    display: flex;
+    gap: 0.15rem;
+    justify-content: center;
+    font-size: 0.9rem;
   }
   
   .start-button:hover:not(:disabled) {

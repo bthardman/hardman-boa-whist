@@ -22,7 +22,8 @@ export class RoomManager {
       currentTrick: [],
       state: 'lobby',
       scoreboard: {},
-      roundNumber: 0
+      roundNumber: 0,
+      winningScore: 5
     };
 
     return this.rooms[roomId];

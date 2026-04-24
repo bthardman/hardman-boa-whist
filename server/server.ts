@@ -188,6 +188,19 @@ io.on('connection', (socket) => {
     io.to(roomId).emit('state_updated', room);
   });
 
+  socket.on('set_winning_score', ({ roomId, winningScore }: { roomId: string; winningScore: number }) => {
+    const room = roomManager.getRoom(roomId);
+    if (!room) return;
+    if (room.state !== 'lobby') return;
+
+    const nextScore = Number(winningScore);
+    if (!Number.isFinite(nextScore)) return;
+
+    // Keep target score in a sane range.
+    room.winningScore = Math.max(1, Math.min(20, Math.floor(nextScore)));
+    io.to(roomId).emit('state_updated', room);
+  });
+
   // --- Handle disconnects ---
   socket.on('disconnect', () => {
     const result = roomManager.findPlayerBySocketId(socket.id);
@@ -384,6 +397,35 @@ io.on('connection', (socket) => {
     if (!resetRoomToLobby(roomId)) return;
     const room = roomManager.getRoom(roomId)!;
     io.to(roomId).emit('state_updated', room);
+  });
+
+  socket.on('rematch_game', ({ roomId }: { roomId: string }) => {
+    const room = roomManager.getRoom(roomId);
+    if (!room) return;
+
+    // Reset to a fresh game while preserving connected players and avatar choices.
+    room.state = 'lobby';
+    room.roundNumber = 0;
+    room.currentPlayer = 0;
+    room.firstPlayer = 0;
+    room.currentTrick = [];
+    room.winner = undefined;
+    room.scoreboard = {};
+    room.players.forEach((p) => {
+      p.hand = [];
+      p.tricksWon = 0;
+      p.bid = undefined;
+    });
+
+    if (!roomManager.canStartGame(room)) {
+      socket.emit('start_game_error', { message: 'Need at least 2 players with selected avatars to start rematch' });
+      io.to(roomId).emit('state_updated', room);
+      return;
+    }
+
+    if (startNextRoundInternal(roomId, true)) {
+      io.to(roomId).emit('state_updated', room);
+    }
   });
 });
 

@@ -29,6 +29,7 @@
 <div class="scoreboard" class:compact>
   <h2>Scoreboard</h2>
   <div class="round-info">Round {$gameState.roundNumber}</div>
+  <div class="target-info">👑 First to {$gameState.winningScore ?? 5}</div>
 
   <!-- Overall game scores (points) -->
   <section class="section game-scores">
@@ -164,6 +165,19 @@
   .scoreboard.compact .round-info {
     margin-bottom: 0.5rem;
     font-size: 0.85rem;
+  }
+
+  .scoreboard .target-info {
+    font-size: 0.8rem;
+    color: #5f7183;
+    margin-bottom: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+
+  .scoreboard.compact .target-info {
+    margin-bottom: 0.5rem;
+    font-size: 0.74rem;
   }
 
   .section {

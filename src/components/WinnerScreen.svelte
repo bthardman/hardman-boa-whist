@@ -4,10 +4,50 @@
   import { getWinnerAvatarUrl } from '../avatarUtils';
   import { getAvatarData } from '../avatarData';
   import type { Player } from '../../shared/types';
+  import { registerErrorHandler, unregisterErrorHandler } from '../utils/socketHandlers';
+  import { onMount, onDestroy } from 'svelte';
 
-  function playAgain() {
-    if (!$gameState) return;
-    socket.emit('cancel_game', { roomId: $gameState.roomId });
+  let errorMessage = '';
+  let showConfirm = false;
+  let confirmMode: 'lobby' | 'rematch' | null = null;
+
+  onMount(() => {
+    registerErrorHandler('start_game_error', (message) => {
+      errorMessage = message;
+      showConfirm = false;
+    });
+    return () => {
+      unregisterErrorHandler('start_game_error');
+    };
+  });
+
+  onDestroy(() => {
+    unregisterErrorHandler('start_game_error');
+  });
+
+  function requestBackToLobby() {
+    confirmMode = 'lobby';
+    showConfirm = true;
+  }
+
+  function requestRematch() {
+    confirmMode = 'rematch';
+    showConfirm = true;
+  }
+
+  function cancelConfirm() {
+    showConfirm = false;
+    confirmMode = null;
+  }
+
+  function confirmResetAndProceed() {
+    if (!$gameState || !confirmMode) return;
+    if (confirmMode === 'rematch') {
+      socket.emit('rematch_game', { roomId: $gameState.roomId });
+    } else {
+      socket.emit('cancel_game', { roomId: $gameState.roomId });
+    }
+    cancelConfirm();
   }
 
   function getSortedPlayers(): Player[] {
@@ -57,7 +97,32 @@
     </div>
   {/if}
   
-  <button class="play-again-button" on:click={playAgain}>Back to Lobby</button>
+  {#if errorMessage}
+    <div class="error-banner">{errorMessage}</div>
+  {/if}
+
+  <div class="postgame-actions">
+    <button class="play-again-button" on:click={requestRematch}>Rematch</button>
+    <button class="secondary-action-button" on:click={requestBackToLobby}>Back to Lobby</button>
+  </div>
+
+  {#if showConfirm}
+    <div class="confirm-overlay" role="dialog" aria-label="Confirm score reset">
+      <button class="confirm-backdrop" aria-label="Close confirmation" on:click={cancelConfirm}></button>
+      <div class="confirm-panel">
+        <h3>Reset Scores?</h3>
+        <p>
+          {#if confirmMode === 'rematch'}
+            This starts a new game with the same players and avatar selections.
+          {:else}
+            This returns everyone to the lobby and resets game scores.
+          {/if}
+        </p>
+        <button class="confirm-primary" on:click={confirmResetAndProceed}>Yes, Reset Scores</button>
+        <button class="confirm-secondary" on:click={cancelConfirm}>Cancel</button>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -163,8 +228,15 @@
     font-size: 1.5rem;
   }
 
+  .postgame-actions {
+    margin-top: 1.4rem;
+    display: flex;
+    gap: 0.7rem;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
   .play-again-button {
-    margin-top: 2rem;
     padding: 1rem 3rem;
     font-size: 1.2rem;
     font-weight: 600;
@@ -178,5 +250,82 @@
 
   .play-again-button:hover {
     background-color: #00B7C2;
+  }
+
+  .secondary-action-button {
+    padding: 1rem 2rem;
+    font-size: 1.05rem;
+    font-weight: 600;
+    border-radius: 8px;
+    border: 1px solid rgba(44, 62, 80, 0.25);
+    background: #fff;
+    color: #2c3e50;
+    cursor: pointer;
+  }
+
+  .error-banner {
+    margin: 0.8rem auto 0;
+    max-width: 460px;
+    padding: 0.55rem 0.7rem;
+    border-radius: 8px;
+    background: #ffe8e8;
+    color: #8a1f1f;
+    border: 1px solid #ffc4c4;
+    font-weight: 600;
+  }
+
+  .confirm-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    z-index: 260;
+  }
+  .confirm-backdrop {
+    position: absolute;
+    inset: 0;
+    border: none;
+    background: rgba(0, 0, 0, 0.55);
+    cursor: pointer;
+  }
+  .confirm-panel {
+    position: relative;
+    z-index: 1;
+    width: min(92vw, 420px);
+    background: #fff;
+    border-radius: 12px;
+    border: 1px solid rgba(44, 62, 80, 0.16);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    padding: 1rem 1rem 0.9rem;
+    text-align: center;
+  }
+  .confirm-panel h3 {
+    margin: 0 0 0.4rem;
+    color: #1f2f44;
+  }
+  .confirm-panel p {
+    margin: 0 0 0.85rem;
+    color: #5f7183;
+  }
+  .confirm-primary,
+  .confirm-secondary {
+    width: 100%;
+    border-radius: 8px;
+    padding: 0.58rem 0.75rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .confirm-primary {
+    border: none;
+    background: #004c8c;
+    color: #fff;
+    margin-bottom: 0.45rem;
+  }
+  .confirm-secondary {
+    border: 1px solid rgba(44, 62, 80, 0.2);
+    background: #fff;
+    color: #2c3e50;
   }
 </style>
