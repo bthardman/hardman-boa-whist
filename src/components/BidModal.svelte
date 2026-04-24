@@ -16,6 +16,19 @@
 
   $: currentPlayer = gameState.players[gameState.currentPlayer ?? 0];
   $: hand = currentPlayer?.hand ?? [];
+  $: bidMarkers = (() => {
+    const markers: Record<number, { avatarUrl: string; label: string }[]> = {};
+    for (const p of biddingSequence) {
+      if (!localPlayer || p.playerId === localPlayer.playerId) continue;
+      if (typeof p.bid !== 'number') continue;
+      if (!markers[p.bid]) markers[p.bid] = [];
+      markers[p.bid].push({
+        avatarUrl: getPlayerAvatarUrl(p),
+        label: getAvatarData(p.selectedAvatar).name
+      });
+    }
+    return markers;
+  })();
 
   function onBid(e: CustomEvent<{ bid: number }>) {
     dispatch('bid', { bid: e.detail.bid });
@@ -37,7 +50,7 @@
         </span>
       {/each}
     </div>
-    <BidSelector forbidden={forbiddenBid} on:bid={onBid} />
+    <BidSelector forbidden={forbiddenBid} {bidMarkers} on:bid={onBid} />
   </div>
 
   <div class="bidding-player-row">
@@ -62,7 +75,7 @@
         {/each}
       </div>
     </div>
-    <div class="bidding-top-meta">
+    <div class="bidding-top-meta active-turn">
       <img src={getPlayerAvatarUrl(currentPlayer)} alt="Avatar" class="local-avatar" />
       <div class="local-name">{getAvatarData(currentPlayer.selectedAvatar).name}</div>
     </div>
@@ -105,30 +118,31 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: center;
-    gap: 0.45rem 1rem;
-    padding: 0.5rem 0.65rem;
+    gap: 0.5rem 1rem;
+    padding: 0.6rem 0.8rem;
     background: rgba(0, 0, 0, 0.05);
     border-radius: 8px;
-    font-size: clamp(0.82rem, 2vw, 1rem);
+    font-size: clamp(0.95rem, 2.4vw, 1.12rem);
     color: #34495e;
   }
   .bids-so-far-label {
     font-weight: 700;
-    margin-right: 0.25rem;
+    margin-right: 0.3rem;
   }
   .bids-so-far-item {
     white-space: nowrap;
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
-    padding: 0.15rem 0.45rem;
+    padding: 0.22rem 0.56rem;
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.75);
     border: 1px solid rgba(52, 73, 94, 0.14);
+    font-weight: 600;
   }
   .bids-avatar {
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
     border-radius: 50%;
     object-fit: contain;
     border: 1px solid rgba(52, 73, 94, 0.25);
@@ -200,6 +214,18 @@
     text-align: center;
     white-space: nowrap;
   }
+  .bidding-top-meta.active-turn .local-avatar {
+    border-color: #ffd84f;
+    box-shadow:
+      0 0 0 3px rgba(255, 216, 79, 0.38),
+      0 0 14px rgba(255, 216, 79, 0.55),
+      0 2px 10px rgba(0, 0, 0, 0.3);
+    animation: turnPulseRing 1.15s ease-in-out infinite;
+  }
+  .bidding-top-meta.active-turn .local-name {
+    color: #ffe889;
+    text-shadow: 0 0 10px rgba(255, 216, 79, 0.5), 0 2px 6px rgba(0, 0, 0, 0.45);
+  }
 
   /* Hand + fanned cards (scoped to this component) */
   .hand {
@@ -254,8 +280,8 @@
       padding: 0.45rem 0.55rem;
     }
     .bids-so-far {
-      padding: 0.25rem 0.4rem;
-      font-size: 0.72rem;
+      padding: 0.32rem 0.5rem;
+      font-size: 0.82rem;
       gap: 0.25rem 0.55rem;
     }
     .bidding-player-row {
@@ -322,7 +348,7 @@
     }
     .bids-so-far {
       padding: 0.2rem 0.4rem;
-      font-size: 0.72rem;
+      font-size: 0.78rem;
       margin-bottom: 0;
     }
     .bidding-player-row {
@@ -342,6 +368,17 @@
       --hand-spread: 16px;
       --hand-rotate: 10deg;
       --hand-base-y: -3px;
+    }
+  }
+  @keyframes turnPulseRing {
+    0%,
+    100% {
+      transform: scale(1);
+      filter: brightness(1);
+    }
+    50% {
+      transform: scale(1.045);
+      filter: brightness(1.08);
     }
   }
 </style>

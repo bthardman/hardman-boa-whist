@@ -100,7 +100,7 @@ function finishRoundAndAdvanceOrEnd(roomId: string): void {
     if (startNextRoundInternal(roomId, false)) {
       io.to(roomId).emit('state_updated', latest);
     }
-  }, 12000);
+  }, 15000);
 }
 
 function resetRoomToLobby(roomId: string): boolean {
@@ -313,7 +313,7 @@ io.on('connection', (socket) => {
           return;
         }
         io.to(roomId).emit('state_updated', latest);
-      }, 2000);
+      }, 5000);
       return;
     } else {
       // Move to next player

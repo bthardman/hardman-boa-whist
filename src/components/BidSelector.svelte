@@ -3,6 +3,7 @@
   // (no card rendering here - BidSelector only shows bid buttons)
 
   export let forbidden: number | null = null;
+  export let bidMarkers: Record<number, { avatarUrl: string; label: string }[]> = {};
 
   const dispatch = createEventDispatcher();
 
@@ -20,6 +21,13 @@
       disabled={forbidden !== null && num === forbidden}
       aria-disabled={forbidden !== null && num === forbidden}
     >
+      {#if bidMarkers[num] && bidMarkers[num].length > 0}
+        <div class="bid-markers" aria-hidden="true">
+          {#each bidMarkers[num] as marker, markerIdx (marker.avatarUrl + markerIdx)}
+            <img src={marker.avatarUrl} alt={marker.label} class="bid-marker-avatar" />
+          {/each}
+        </div>
+      {/if}
       {num}
     </button>
   {/each}
@@ -40,6 +48,8 @@
   box-sizing: border-box;
 }
 .bid-card {
+  position: relative;
+  overflow: visible;
   flex: 0 1 auto;
   width: clamp(38px, 8vw, 70px);
   aspect-ratio: 0.78;
@@ -63,6 +73,26 @@
   -webkit-tap-highlight-color: transparent;
   border: 1px solid rgba(44, 62, 80, 0.2);
   padding: 0;
+}
+.bid-markers {
+  position: absolute;
+  left: 50%;
+  top: -14px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  pointer-events: none;
+}
+.bid-marker-avatar {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  object-fit: contain;
+  border: 1px solid rgba(44, 62, 80, 0.35);
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
 }
 .bid-card:hover {
   transform: scale(1.08);
@@ -90,6 +120,8 @@
     font-size: clamp(0.9rem, 2.6vw, 1.2rem);
     border-radius: 8px;
   }
+  .bid-markers { top: -12px; }
+  .bid-marker-avatar { width: 16px; height: 16px; }
 }
 
 @media (max-width: 600px) {
@@ -103,6 +135,8 @@
     font-size: clamp(0.85rem, 3vw, 1.05rem);
     border-radius: 7px;
   }
+  .bid-markers { top: -11px; }
+  .bid-marker-avatar { width: 14px; height: 14px; }
 }
 
 @media (max-width: 430px) {

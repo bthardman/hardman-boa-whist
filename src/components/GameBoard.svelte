@@ -369,7 +369,7 @@
   >
     <!-- Fixed top bar: always present. In bidding phase the announcer is centered; in tricks we keep room for the scoreboard button. -->
     <header class="top-bar top-bar-fixed" class:centered={isBiddingPhase}>
-      <div class="action-announcer" role="status" aria-live="polite">
+      <div class="action-announcer" class:your-turn={isLocalTurn} role="status" aria-live="polite">
         {announcerText || '\u00A0'}
       </div>
       {#if !isBiddingPhase}
@@ -770,6 +770,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  .action-announcer.your-turn {
+    background: linear-gradient(180deg, #ffe68a 0%, #ffd347 100%);
+    color: #2d2a1f;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.55);
+    box-shadow: 0 3px 12px rgba(255, 211, 71, 0.42);
+    border: 1px solid rgba(191, 144, 0, 0.45);
+  }
 
   .scoreboard-toggle {
     flex: 0 0 auto;
@@ -1153,7 +1160,7 @@
   }
   .turn-reminder-banner {
     position: absolute;
-    top: clamp(46px, 8vh, 72px);
+    bottom: clamp(132px, 24vh, 190px);
     left: 50%;
     transform: translateX(-50%);
     background: rgba(255, 249, 221, 0.96);
@@ -1167,6 +1174,8 @@
     z-index: 36;
     pointer-events: none;
     animation: bidBannerPop 0.22s ease-out;
+    max-width: min(84vw, 340px);
+    text-align: center;
   }
   @keyframes bidBannerPop {
     from {
