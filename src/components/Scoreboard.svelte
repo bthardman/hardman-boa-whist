@@ -21,6 +21,7 @@
     if (!$gameState || $gameState.state !== 'tricks') return false;
     if (typeof player.bid !== 'number') return false;
     if (player.tricksWon > player.bid) return true;
+    if ($gameState.currentTrick.length > 0) return false;
     return player.tricksWon + player.hand.length < player.bid;
   }
 </script>
@@ -39,7 +40,13 @@
         {@const score = $gameState.scoreboard[index] ?? 0}
         {@const isLeading = Math.max(...Object.values($gameState.scoreboard || {})) === score && score > 0}
         <li class:leading={isLeading}>
-          <span class="player-name">{getAvatarData(player.selectedAvatar).name}</span>
+          <span class="player-name">
+            <img src={player.inGameAvatar || getAvatarData(player.selectedAvatar).avatar1} alt="" class="score-avatar" />
+            {getAvatarData(player.selectedAvatar).name}
+            {#if $localPlayer && player.playerId === $localPlayer.playerId}
+              <span class="you-tag"> (you)</span>
+            {/if}
+          </span>
           <span class="score">{score}</span>
           {#if isLeading && Object.values($gameState.scoreboard || {}).filter(s => s === score).length === 1}
             <span class="leader-badge">👑</span>
@@ -61,7 +68,10 @@
         </div>
         {#each biddingSequence as player}
           <div class="hand-row" class:you={$localPlayer && player.playerId === $localPlayer.playerId}>
-            <span class="col-name">{getAvatarData(player.selectedAvatar).name}{#if $localPlayer && player.playerId === $localPlayer.playerId} (you){/if}</span>
+            <span class="col-name">
+              <img src={player.inGameAvatar || getAvatarData(player.selectedAvatar).avatar1} alt="" class="score-avatar" />
+              {getAvatarData(player.selectedAvatar).name}{#if $localPlayer && player.playerId === $localPlayer.playerId}<span class="you-tag"> (you)</span>{/if}
+            </span>
             <span class="col-bid">
               <span class="cell-value-chip bid-chip">
                 {typeof player.bid === 'number' ? player.bid : '—'}
@@ -236,6 +246,9 @@
   .player-name {
     flex: 1;
     text-align: left;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
   }
 
   .score {
@@ -289,6 +302,9 @@
 
   .col-name {
     min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
   }
 
   .col-bid,
@@ -332,5 +348,20 @@
     background: linear-gradient(180deg, rgba(255, 225, 225, 0.95), rgba(255, 203, 203, 0.9));
     box-shadow: 0 0 0 1px rgba(255, 150, 150, 0.45);
     font-weight: 700;
+  }
+
+  .score-avatar {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    object-fit: contain;
+    border: 1px solid rgba(44, 62, 80, 0.2);
+    background: transparent;
+    flex: 0 0 auto;
+  }
+
+  .you-tag {
+    font-weight: 700;
+    color: #2f4965;
   }
 </style>

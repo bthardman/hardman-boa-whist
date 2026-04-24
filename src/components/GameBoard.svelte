@@ -23,6 +23,9 @@
   let trickCollectCardCount = 0;
   let trickCollectTimer: ReturnType<typeof setTimeout> | null = null;
   let turnPulsePlayerId: string | null = null;
+  let showTurnReminder = false;
+  let turnReminderTimer: ReturnType<typeof setTimeout> | null = null;
+  let uiScale: 'small' | 'normal' | 'large' = 'normal';
   let showBidAnnouncement = false;
   let bidAnnouncementText: string | null = null;
   let bidAnnouncementTimer: ReturnType<typeof setTimeout> | null = null;
@@ -114,12 +117,18 @@
     if (!$gameState || $gameState.state !== 'tricks') return false;
     if (typeof player.bid !== 'number') return false;
     if (player.tricksWon > player.bid) return true;
+    // Avoid false "can't make it" while a trick is still being resolved.
+    if ($gameState.currentTrick.length > 0) return false;
     // If even winning all remaining tricks cannot reach bid, mark red.
     return player.tricksWon + player.hand.length < player.bid;
   }
 
   onMount(() => {
     document.body.classList.add('game-bg');
+    const storedScale = localStorage.getItem('uiScale');
+    if (storedScale === 'small' || storedScale === 'normal' || storedScale === 'large') {
+      uiScale = storedScale;
+    }
     if ($gameState?.players) {
       $gameState.players.forEach((player: Player) => startAvatarSwap(player));
     }
@@ -133,6 +142,10 @@
     if (trickCollectTimer) {
       clearTimeout(trickCollectTimer);
       trickCollectTimer = null;
+    }
+    if (turnReminderTimer) {
+      clearTimeout(turnReminderTimer);
+      turnReminderTimer = null;
     }
     if (bidAnnouncementTimer) {
       clearTimeout(bidAnnouncementTimer);
@@ -167,6 +180,25 @@
     currentPlayerId === $localPlayer.playerId;
 
   $: isLocalTurnToPlay = !!$gameState && !!$localPlayer && $gameState.state === 'tricks' && isLocalTurn;
+
+  $: if (isLocalTurnToPlay) {
+    showTurnReminder = false;
+    if (turnReminderTimer) clearTimeout(turnReminderTimer);
+    turnReminderTimer = setTimeout(() => {
+      if (isLocalTurnToPlay) showTurnReminder = true;
+    }, 7000);
+  } else {
+    showTurnReminder = false;
+    if (turnReminderTimer) {
+      clearTimeout(turnReminderTimer);
+      turnReminderTimer = null;
+    }
+  }
+
+  function setUiScale(scale: 'small' | 'normal' | 'large') {
+    uiScale = scale;
+    localStorage.setItem('uiScale', scale);
+  }
 
   $: if ($gameState?.state === 'tricks') {
     const currentTrickLength = $gameState.currentTrick.length;
@@ -328,7 +360,13 @@
 </script>
 
 {#if $gameState}
-  <div class="gameboard" class:modal-bidding={isBiddingLocal} class:bidding-phase={isBiddingPhase}>
+  <div
+    class="gameboard"
+    class:modal-bidding={isBiddingLocal}
+    class:bidding-phase={isBiddingPhase}
+    class:ui-small={uiScale === 'small'}
+    class:ui-large={uiScale === 'large'}
+  >
     <!-- Fixed top bar: always present. In bidding phase the announcer is centered; in tricks we keep room for the scoreboard button. -->
     <header class="top-bar top-bar-fixed" class:centered={isBiddingPhase}>
       <div class="action-announcer" role="status" aria-live="polite">
@@ -382,6 +420,14 @@
         ></button>
         <div class="settings-panel">
           <h3>Game Settings</h3>
+          <div class="ui-scale-group">
+            <div class="ui-scale-label">UI Scale</div>
+            <div class="ui-scale-options">
+              <button type="button" class="ui-scale-btn" class:active={uiScale === 'small'} on:click={() => setUiScale('small')}>Small</button>
+              <button type="button" class="ui-scale-btn" class:active={uiScale === 'normal'} on:click={() => setUiScale('normal')}>Normal</button>
+              <button type="button" class="ui-scale-btn" class:active={uiScale === 'large'} on:click={() => setUiScale('large')}>Large</button>
+            </div>
+          </div>
           <button type="button" class="settings-end-game-btn" on:click={cancelGame}>End Game</button>
           <button type="button" class="settings-close-btn" on:click={closeSettings}>Close</button>
         </div>
@@ -391,6 +437,9 @@
     <div class="gameboard-content">
       {#if isBiddingPhase && showBidAnnouncement && bidAnnouncementText}
         <div class="bid-banner">{bidAnnouncementText}</div>
+      {/if}
+      {#if showTurnReminder}
+        <div class="turn-reminder-banner">It's your turn to play</div>
       {/if}
       {#if isBiddingLocal}
         <BidModal
@@ -795,6 +844,37 @@
     margin: 0 0 0.35rem;
     font-size: 1.05rem;
   }
+  .ui-scale-group {
+    margin-bottom: 0.7rem;
+  }
+  .ui-scale-label {
+    font-size: 0.8rem;
+    color: #5f7183;
+    margin-bottom: 0.3rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .ui-scale-options {
+    display: flex;
+    gap: 0.35rem;
+  }
+  .ui-scale-btn {
+    flex: 1;
+    border: 1px solid rgba(44, 62, 80, 0.22);
+    background: #fff;
+    color: #2c3e50;
+    border-radius: 8px;
+    padding: 0.35rem 0.45rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .ui-scale-btn.active {
+    background: #004c8c;
+    color: #fff;
+    border-color: #004c8c;
+  }
   .settings-end-game-btn {
     border: 1px solid rgba(255, 255, 255, 0.34);
     background: rgba(140, 19, 19, 0.9);
@@ -1071,6 +1151,23 @@
     pointer-events: none;
     animation: bidBannerPop 0.22s ease-out;
   }
+  .turn-reminder-banner {
+    position: absolute;
+    top: clamp(46px, 8vh, 72px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255, 249, 221, 0.96);
+    color: #1f2f44;
+    border: 1px solid rgba(230, 187, 75, 0.65);
+    border-radius: 10px;
+    padding: 0.42rem 0.86rem;
+    font-size: clamp(0.82rem, 2.2vw, 0.98rem);
+    font-weight: 700;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+    z-index: 36;
+    pointer-events: none;
+    animation: bidBannerPop 0.22s ease-out;
+  }
   @keyframes bidBannerPop {
     from {
       opacity: 0;
@@ -1323,6 +1420,20 @@
     border-radius: 6px;
     padding: 0.07rem 0.32rem;
     animation: warningPulse 1.2s ease-in-out infinite;
+  }
+  .gameboard.ui-small {
+    --ui-card-scale: 0.92;
+  }
+  .gameboard.ui-large {
+    --ui-card-scale: 1.08;
+  }
+  .gameboard.ui-small :global(.card) {
+    transform: scale(var(--ui-card-scale));
+    transform-origin: bottom center;
+  }
+  .gameboard.ui-large :global(.card) {
+    transform: scale(var(--ui-card-scale));
+    transform-origin: bottom center;
   }
   @keyframes warningPulse {
     0%,

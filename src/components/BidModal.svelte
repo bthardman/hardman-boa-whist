@@ -31,6 +31,7 @@
           class="bids-so-far-item"
           class:you={localPlayer && p.playerId === localPlayer.playerId}
         >
+          <img src={getPlayerAvatarUrl(p)} alt="" class="bids-avatar" />
           {getAvatarData(p.selectedAvatar).name}{#if localPlayer && p.playerId === localPlayer.playerId}<span class="you-tag">&nbsp;(you)</span>{/if}:
           {typeof p.bid === 'number' ? p.bid : '—'}
         </span>
@@ -104,11 +105,11 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: center;
-    gap: 0.35rem 1rem;
-    padding: 0.35rem 0.5rem;
+    gap: 0.45rem 1rem;
+    padding: 0.5rem 0.65rem;
     background: rgba(0, 0, 0, 0.05);
     border-radius: 8px;
-    font-size: clamp(0.75rem, 2vw, 0.95rem);
+    font-size: clamp(0.82rem, 2vw, 1rem);
     color: #34495e;
   }
   .bids-so-far-label {
@@ -117,6 +118,25 @@
   }
   .bids-so-far-item {
     white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.75);
+    border: 1px solid rgba(52, 73, 94, 0.14);
+  }
+  .bids-avatar {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    object-fit: contain;
+    border: 1px solid rgba(52, 73, 94, 0.25);
+    background: transparent;
+    flex: 0 0 auto;
+  }
+  .bids-so-far-item.you .bids-avatar {
+    box-shadow: 0 0 0 2px rgba(90, 185, 242, 0.45);
   }
   .bids-so-far-item.you {
     font-weight: 700;

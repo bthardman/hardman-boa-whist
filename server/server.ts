@@ -142,7 +142,6 @@ io.on('connection', (socket) => {
       socket.emit('join_error', {
         message: 'Game already in progress. Please wait for the next game.'
       });
-      socket.disconnect(true);
       return;
     }
 
@@ -197,7 +196,7 @@ io.on('connection', (socket) => {
     if (!Number.isFinite(nextScore)) return;
 
     // Keep target score in a sane range.
-    room.winningScore = Math.max(1, Math.min(20, Math.floor(nextScore)));
+    room.winningScore = Math.max(1, Math.min(5, Math.floor(nextScore)));
     io.to(roomId).emit('state_updated', room);
   });
 
@@ -256,6 +255,11 @@ io.on('connection', (socket) => {
     const room = roomManager.getRoom(roomId);
     if (!room) return;
 
+    if (room.currentTrick.length === room.players.length) {
+      socket.emit('play_card_error', { message: 'Please wait, trick resolving...' });
+      return;
+    }
+
     // Find player by playerId (fix bug: client sends playerId, not playerIndex)
     const playerIndex = room.players.findIndex(p => p.playerId === card.playerId);
     if (playerIndex === -1) return;
@@ -293,15 +297,24 @@ io.on('connection', (socket) => {
       const winnerIndex = calculateTrickWinner(room.currentTrick, room.players);
       if (winnerIndex !== -1) {
         room.players[winnerIndex].tricksWon++;
-        room.currentTrick = [];
         room.currentPlayer = winnerIndex;
       }
 
-      // If all hands are empty, score round and progress.
-      if (checkRoundEnd(room)) {
-        finishRoundAndAdvanceOrEnd(roomId);
-        return;
-      }
+      // Let clients see the final trick cards briefly before clearing + progressing.
+      io.to(roomId).emit('state_updated', room);
+      setTimeout(() => {
+        const latest = roomManager.getRoom(roomId);
+        if (!latest) return;
+        if (latest.currentTrick.length !== latest.players.length) return;
+
+        latest.currentTrick = [];
+        if (checkRoundEnd(latest)) {
+          finishRoundAndAdvanceOrEnd(roomId);
+          return;
+        }
+        io.to(roomId).emit('state_updated', latest);
+      }, 2000);
+      return;
     } else {
       // Move to next player
       room.currentPlayer = (playerIndex + 1) % room.players.length;

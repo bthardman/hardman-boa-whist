@@ -75,6 +75,15 @@
   function selectPlayerAvatar(avatarChoice: AvatarChoice) {
     if (!$localPlayer || !$gameState) return;
 
+    if ($localPlayer.selectedAvatar === avatarChoice) {
+      socket.emit("select_avatar", {
+        roomId: $roomId,
+        playerId: $localPlayer.playerId,
+        avatarChoice: AvatarChoice.UNDEFINED
+      });
+      return;
+    }
+
     const isTaken = $gameState.players.some(
       p => p.playerId !== $localPlayer.playerId && p.selectedAvatar === avatarChoice
     );
@@ -632,13 +641,6 @@
     background: #004c8c;
     color: #fff;
     border-color: #004c8c;
-  }
-  .winning-score-crowns {
-    min-height: 1.1rem;
-    display: flex;
-    gap: 0.15rem;
-    justify-content: center;
-    font-size: 0.9rem;
   }
   
   .start-button:hover:not(:disabled) {

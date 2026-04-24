@@ -12,17 +12,23 @@
   let confirmMode: 'lobby' | 'rematch' | null = null;
 
   onMount(() => {
+    document.body.classList.add('winner-bg');
+    document.documentElement.classList.add('winner-bg');
     registerErrorHandler('start_game_error', (message) => {
       errorMessage = message;
       showConfirm = false;
     });
     return () => {
       unregisterErrorHandler('start_game_error');
+      document.body.classList.remove('winner-bg');
+      document.documentElement.classList.remove('winner-bg');
     };
   });
 
   onDestroy(() => {
     unregisterErrorHandler('start_game_error');
+    document.body.classList.remove('winner-bg');
+    document.documentElement.classList.remove('winner-bg');
   });
 
   function requestBackToLobby() {
@@ -126,11 +132,21 @@
 </div>
 
 <style>
+  :global(html.winner-bg),
+  :global(body.winner-bg),
+  :global(body.winner-bg #app) {
+    height: auto !important;
+    min-height: 100dvh;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+  }
   .winner-screen {
     text-align: center;
     padding: 2rem;
     max-width: 600px;
     margin: 0 auto;
+    min-height: 100dvh;
+    box-sizing: border-box;
   }
 
   .winner-title {
