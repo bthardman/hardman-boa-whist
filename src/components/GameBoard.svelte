@@ -103,6 +103,14 @@
     return $gameState.currentTrick[0].card.suit;
   }
 
+  function getSuitSymbol(suit: string): string {
+    if (suit === 'spades') return '♠';
+    if (suit === 'hearts') return '♥';
+    if (suit === 'diamonds') return '♦';
+    if (suit === 'clubs') return '♣';
+    return suit;
+  }
+
   function getWinnerTargetClass(winnerIndex: number): string {
     const n = $gameState?.players?.length || 0;
     if (n === 0 || winnerIndex < 0 || $localPlayerIndex < 0) return 'to-center';
@@ -173,10 +181,17 @@
   $: currentPlayerId =
     $gameState?.currentPlayer !== undefined ? $gameState?.players?.[$gameState.currentPlayer]?.playerId : null;
 
+  $: isTrickResolving =
+    !!$gameState &&
+    $gameState.state === 'tricks' &&
+    $gameState.currentTrick.length === $gameState.players.length &&
+    $gameState.players.length > 0;
+
   $: isLocalTurn =
     !!$gameState &&
     !!$localPlayer &&
     ($gameState.state === 'bidding' || $gameState.state === 'tricks') &&
+    !isTrickResolving &&
     currentPlayerId === $localPlayer.playerId;
 
   $: isLocalTurnToPlay = !!$gameState && !!$localPlayer && $gameState.state === 'tricks' && isLocalTurn;
@@ -500,7 +515,7 @@
                       class="played-card {index === winningIndex ? 'winning-card' : ''}"
                       class:dimmed={index !== winningIndex}
                       class:led-loser={index === 0 && index !== winningIndex}
-                      style="z-index: {index + 1};"
+                      style="z-index: {isTrickResolving && index === winningIndex ? 120 : index + 1};"
                       transition:fly={{ y: -50, duration: 400 }}
                     >
                       <Card {ownedCard} />
@@ -513,15 +528,30 @@
               {/if}
 
               {#if $gameState.currentTrick.length > 0 && $gameState.state === 'tricks'}
-                {@const ledSuit = getLedSuit()}
-                {#if ledSuit}
-                  <div class="led-suit-indicator">
-                    Led suit: <span
-                      class="suit-name"
-                      class:red-suit={ledSuit === 'hearts' || ledSuit === 'diamonds'}
-                      >{ledSuit}</span
-                    >
-                  </div>
+                {#if isTrickResolving}
+                  {@const winningIndex = getWinningCardIndex()}
+                  {@const winnerCard = winningIndex >= 0 ? $gameState.currentTrick[winningIndex] : null}
+                  {@const winnerPlayer = winnerCard ? $gameState.players.find((p) => p.playerId === winnerCard.playerId) : null}
+                  {#if winnerCard && winnerPlayer}
+                    <div class="led-suit-indicator">
+                      {getAvatarData(winnerPlayer.selectedAvatar).name} wins with {winnerCard.card.value} <span
+                        class="suit-name"
+                        class:red-suit={winnerCard.card.suit === 'hearts' || winnerCard.card.suit === 'diamonds'}
+                        >{getSuitSymbol(winnerCard.card.suit)}</span
+                      >
+                    </div>
+                  {/if}
+                {:else}
+                  {@const ledSuit = getLedSuit()}
+                  {#if ledSuit}
+                    <div class="led-suit-indicator">
+                      Led suit: <span
+                        class="suit-name"
+                        class:red-suit={ledSuit === 'hearts' || ledSuit === 'diamonds'}
+                        >{ledSuit}</span
+                      >
+                    </div>
+                  {/if}
                 {/if}
               {/if}
 
@@ -1106,7 +1136,7 @@
   }
   .led-suit-indicator {
     position: absolute;
-    bottom: clamp(8px, 2vh, 14px);
+    bottom: clamp(-6px, 0.8vh, 6px);
     left: 50%;
     transform: translateX(-50%);
     background: rgba(255, 255, 255, 0.95);

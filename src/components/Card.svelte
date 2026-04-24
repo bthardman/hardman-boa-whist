@@ -18,7 +18,11 @@
       isPlayable = false;
       isTurn = false;
     } else {
-      isTurn = state.currentPlayer === $localPlayerIndex && state.state === 'tricks';
+      const isResolvingTrick =
+        state.state === 'tricks' &&
+        state.players?.length > 0 &&
+        state.currentTrick.length === state.players.length;
+      isTurn = state.currentPlayer === $localPlayerIndex && state.state === 'tricks' && !isResolvingTrick;
 
       if (!isTurn) {
         isPlayable = false;
@@ -88,8 +92,9 @@
     user-select: none;
     transition: transform 0.2s;
     background: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.95);
     border-radius: clamp(4px, 1vw, 6px);
-    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.22);
     position: relative;
     z-index: 1;
     touch-action: manipulation;
@@ -102,6 +107,8 @@
     box-shadow: none;
     background: #fff;
     display: block;
+    outline: 1px solid rgba(255, 255, 255, 0.86);
+    outline-offset: -1px;
   }
   .card.playable:hover {
     transform: translateY(-10px) scale(1.05);
