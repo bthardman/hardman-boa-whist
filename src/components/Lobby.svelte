@@ -334,56 +334,58 @@
       <img src="/logo/logo.png" alt="Game Logo" class="app-logo" />
   </header>
   <div class="lobby-shell">
-  <div class="lobby" bind:this={lobbyScroller} on:scroll={handleCarouselScroll}>
-    {#each carouselRenderChoices as avatarChoice, displayIdx}
-      {@const idx = displayToRealIndex(displayIdx)}
-      {#if $localPlayer && $gameState}
-        <div 
-          class="player-card"
-          class:clickable={!$gameState.players.some((p) => p.selectedAvatar === avatarChoice)}
-          style="border-color: {getAvatarBorderColor($gameState.players, avatarChoice)}"
-          on:click={() => {
-            carouselIndex = idx;
-            suppressScrollSyncUntil = Date.now() + 220;
-            scrollToDisplayIndex(displayIdx);
-            currentDisplayIndex = displayIdx;
-            selectPlayerAvatar(avatarChoice);
-          }}
-          on:keydown={(e) => e.key === 'Enter' && selectPlayerAvatar(avatarChoice)}
-          role="button"
-          tabindex="0"
-          bind:this={carouselCards[displayIdx]}
-        >
-          <div class="player-name">{getPlayerName(avatarChoice)}</div>
-          <div class="avatar-options">
-            <div
-              class="avatar-option"
+    <div class="carousel-frame">
+      <div class="lobby" bind:this={lobbyScroller} on:scroll={handleCarouselScroll}>
+        {#each carouselRenderChoices as avatarChoice, displayIdx}
+          {@const idx = displayToRealIndex(displayIdx)}
+          {#if $localPlayer && $gameState}
+            <div 
+              class="player-card"
+              class:clickable={!$gameState.players.some((p) => p.selectedAvatar === avatarChoice)}
               style="border-color: {getAvatarBorderColor($gameState.players, avatarChoice)}"
+              on:click={() => {
+                carouselIndex = idx;
+                suppressScrollSyncUntil = Date.now() + 220;
+                scrollToDisplayIndex(displayIdx);
+                currentDisplayIndex = displayIdx;
+                selectPlayerAvatar(avatarChoice);
+              }}
+              on:keydown={(e) => e.key === 'Enter' && selectPlayerAvatar(avatarChoice)}
+              role="button"
+              tabindex="0"
+              bind:this={carouselCards[displayIdx]}
             >
-              <img src={getAvatarData(avatarChoice).avatar1} alt="{getPlayerName(avatarChoice)} Avatar" class="option-avatar" />
-              {#if getAvatarSelectionState($gameState.players, avatarChoice).isSelected}
-                <div class="selection-indicator">
-                  {getAvatarSelectionState($gameState.players, avatarChoice).isSelectedByMe
-                    ? 'You'
-                    : 'Player ' + ($gameState.players.findIndex(p => p.selectedAvatar === avatarChoice) + 1)
-                  }
+              <div class="player-name">{getPlayerName(avatarChoice)}</div>
+              <div class="avatar-options">
+                <div
+                  class="avatar-option"
+                  style="border-color: {getAvatarBorderColor($gameState.players, avatarChoice)}"
+                >
+                  <img src={getAvatarData(avatarChoice).avatar1} alt="{getPlayerName(avatarChoice)} Avatar" class="option-avatar" />
+                  {#if getAvatarSelectionState($gameState.players, avatarChoice).isSelected}
+                    <div class="selection-indicator">
+                      {getAvatarSelectionState($gameState.players, avatarChoice).isSelectedByMe
+                        ? 'You'
+                        : 'Player ' + ($gameState.players.findIndex(p => p.selectedAvatar === avatarChoice) + 1)
+                      }
+                    </div>
+                  {/if}
                 </div>
-              {/if}
+              </div>
+              <div class="player-status">
+                  <span  style="color: {getReadyTextColor($gameState.players, avatarChoice)}">
+                    {#if getAvatarSelectionState($gameState.players, avatarChoice).isSelected}
+                      Ready to play
+                    {:else}
+                      Click to select
+                    {/if}
+                  </span>
+              </div>
             </div>
-          </div>
-          <div class="player-status">
-              <span  style="color: {getReadyTextColor($gameState.players, avatarChoice)}">
-                {#if getAvatarSelectionState($gameState.players, avatarChoice).isSelected}
-                  Ready to play
-                {:else}
-                  Click to select
-                {/if}
-              </span>
-          </div>
-        </div>
-      {/if}
-    {/each}
-  </div>
+          {/if}
+        {/each}
+      </div>
+    </div>
   {#if avatarChoices.length > 1}
     <div class="carousel-controls" aria-label="Avatar carousel controls">
       <button type="button" class="carousel-nav-btn" on:click={() => scrollCarousel(-1)} aria-label="Previous avatar">
@@ -397,17 +399,19 @@
   </div>
 
   {#if $gameState}
-  <button 
-    on:click={startGame} 
-    disabled={!canStartGame($gameState.players)}
-    class="start-button"
-  >
-    {canStartGame($gameState.players) ? 'Start Game' : 'Need at least 2 players with selected avatars'}
-  </button>
-  <div class="lobby-actions-row">
-    <button type="button" class="lobby-settings-btn" on:click={toggleSettings} aria-expanded={settingsOpen}>
-      ⚙ Game Settings
+  <div class="lobby-bottom-actions">
+    <button 
+      on:click={startGame} 
+      disabled={!canStartGame($gameState.players)}
+      class="start-button"
+    >
+      {canStartGame($gameState.players) ? 'Start Game' : 'Need at least 2 players with selected avatars'}
     </button>
+    <div class="lobby-actions-row">
+      <button type="button" class="lobby-settings-btn" on:click={toggleSettings} aria-expanded={settingsOpen}>
+        ⚙ Game Settings
+      </button>
+    </div>
   </div>
   {/if}
 </div>
@@ -451,8 +455,8 @@
     position: relative;
   }
   .app-logo {
-    max-width: clamp(150px, 30vw, 200px);
-    max-height: clamp(180px, 40vw, 250px);
+    max-width: clamp(220px, 40vw, 340px);
+    max-height: clamp(220px, 34vh, 320px);
     object-fit: contain;
     filter: drop-shadow(0 2px 8px rgba(0,0,0,0.10));
   }
@@ -559,13 +563,42 @@
   }
   .lobby-main {
     width: 100%;
-    flex: 1 1 auto;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
+    min-height: calc(100dvh - 1.2rem);
+    display: grid;
+    grid-template-rows: 1fr auto 1fr;
     align-items: center;
-    justify-content: center;
-    gap: 0.4rem;
+    justify-items: center;
+    gap: clamp(0.5rem, 1.5vh, 0.9rem);
+  }
+  .lobby-bottom-actions {
+    grid-row: 3;
+    align-self: center;
+    justify-self: center;
+    width: min(96vw, 560px);
+  }
+  .carousel-frame {
+    position: relative;
+    min-height: clamp(152px, 24vh, 210px);
+    display: flex;
+    align-items: center;
+  }
+  .carousel-frame::before,
+  .carousel-frame::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: clamp(48px, 9vw, 130px);
+    z-index: 3;
+    pointer-events: none;
+  }
+  .carousel-frame::before {
+    left: 0;
+    background: linear-gradient(90deg, rgba(205, 224, 236, 0.98) 0%, rgba(205, 224, 236, 0.9) 34%, rgba(205, 224, 236, 0) 100%);
+  }
+  .carousel-frame::after {
+    right: 0;
+    background: linear-gradient(270deg, rgba(205, 224, 236, 0.98) 0%, rgba(205, 224, 236, 0.9) 34%, rgba(205, 224, 236, 0) 100%);
   }
   .carousel-controls {
     display: flex;
@@ -890,6 +923,16 @@
     max-width: min(1420px, 99vw);
     padding: 0;
   }
+  .app-header {
+    grid-row: 1;
+    align-self: center;
+    justify-self: center;
+  }
+  .lobby-shell {
+    grid-row: 2;
+    align-self: center;
+    justify-self: center;
+  }
 
   .player-card {
     border: 1px solid rgba(122, 160, 190, 0.42);
@@ -945,8 +988,8 @@
   }
 
   .lobby-actions-row {
-    margin-top: 0.9rem;
-    margin-bottom: 0.35rem;
+    margin-top: 0.75rem;
+    margin-bottom: 0;
   }
 
   .lobby-settings-btn {
@@ -971,7 +1014,7 @@
   }
 
   .start-button {
-    margin-top: 0.45rem;
+    margin-top: 0;
     border-radius: 12px;
     border: 1px solid rgba(122, 188, 237, 0.45);
     background: linear-gradient(165deg, #2f7bef 0%, #245fcf 100%);
@@ -1029,5 +1072,23 @@
   .winning-score-btn:hover:not(.active) {
     border-color: rgba(87, 132, 182, 0.55);
     transform: translateY(-1px);
+  }
+
+  @media (max-width: 768px) {
+    .lobby-main {
+      min-height: calc(100dvh - 0.8rem);
+      grid-template-rows: 1fr auto 1fr;
+      gap: 0.55rem;
+    }
+    .carousel-frame {
+      min-height: clamp(148px, 22vh, 190px);
+    }
+    .carousel-frame::before,
+    .carousel-frame::after {
+      width: 44px;
+    }
+    .lobby-bottom-actions {
+      width: min(96vw, 440px);
+    }
   }
 </style>
