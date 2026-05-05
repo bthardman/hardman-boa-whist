@@ -5,6 +5,8 @@
 
   /** When true, use compact styling for in-game overlay (e.g. top-right panel). */
   export let compact = false;
+  export let showHeader = true;
+  export let showThisHand = true;
   // Derive bidding sequence from firstPlayer so bids display in the order asked
   $: biddingSequence = $gameState
     ? (() => {
@@ -28,9 +30,11 @@
 
 {#if $gameState && $gameState.roundNumber > 0}
 <div class="scoreboard" class:compact>
-  <h2>Scoreboard</h2>
-  <div class="round-info">Round {$gameState.roundNumber}</div>
-  <div class="target-info">👑 First to {$gameState.winningScore ?? 5}</div>
+  {#if showHeader}
+    <h2>Scoreboard</h2>
+    <div class="round-info">Round {$gameState.roundNumber}</div>
+    <div class="target-info">👑 First to {$gameState.winningScore ?? 5}</div>
+  {/if}
 
   <!-- Overall game scores (points) -->
   <section class="section game-scores">
@@ -57,14 +61,14 @@
   </section>
 
   <!-- This hand: bids and tricks -->
-  {#if $gameState.state === 'bidding' || $gameState.state === 'tricks' || $gameState.state === 'round_end'}
+  {#if showThisHand && ($gameState.state === 'bidding' || $gameState.state === 'tricks' || $gameState.state === 'round_end')}
     <section class="section this-hand">
       <h3 class="section-title">This hand</h3>
       <div class="hand-table">
         <div class="hand-row header">
           <span class="col-name">Player</span>
-          <span class="col-bid"><span class="cell-icon" aria-hidden="true">🎯</span> Bid</span>
-          <span class="col-tricks"><span class="cell-icon" aria-hidden="true">🃏</span> Tricks</span>
+          <span class="col-bid">Bid</span>
+          <span class="col-tricks">Tricks</span>
         </div>
         {#each biddingSequence as player}
           <div class="hand-row" class:you={$localPlayer && player.playerId === $localPlayer.playerId}>
@@ -73,14 +77,10 @@
               {getAvatarData(player.selectedAvatar).name}{#if $localPlayer && player.playerId === $localPlayer.playerId}<span class="you-tag"> (you)</span>{/if}
             </span>
             <span class="col-bid">
-              <span class="cell-value-chip bid-chip">
-                {typeof player.bid === 'number' ? player.bid : '—'}
-              </span>
+              <span class="cell-value">{typeof player.bid === 'number' ? player.bid : '—'}</span>
             </span>
             <span class="col-tricks" class:warning={isTricksWarning(player)}>
-              <span class="cell-value-chip tricks-chip" class:warning-chip={isTricksWarning(player)}>
-                {player.tricksWon}
-              </span>
+              <span class="cell-value" class:warning-value={isTricksWarning(player)}>{player.tricksWon}</span>
             </span>
           </div>
         {/each}
@@ -92,15 +92,32 @@
 
 <style>
   .scoreboard {
-    background: linear-gradient(180deg, #ffffff 0%, #f7f9fc 100%);
-    border: 1px solid rgba(44, 62, 80, 0.12);
-    border-radius: 14px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
-    padding: 1.5rem 2rem;
+    background:
+      radial-gradient(120% 100% at 10% -20%, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0) 58%),
+      linear-gradient(165deg, rgba(248, 251, 255, 0.95), rgba(233, 240, 249, 0.94));
+    border: 1px solid rgba(128, 155, 191, 0.34);
+    border-radius: 20px;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.9),
+      0 24px 42px rgba(11, 31, 56, 0.26);
+    padding: 1.35rem 1.35rem 1.15rem;
     margin: 1rem auto;
-    max-width: 400px;
+    max-width: 420px;
     text-align: center;
     color: #223344;
+    backdrop-filter: blur(10px);
+  }
+
+  .scoreboard:not(.compact) {
+    background:
+      radial-gradient(140% 120% at 15% -25%, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0) 58%),
+      linear-gradient(165deg, rgba(243, 248, 255, 0.96), rgba(228, 236, 247, 0.94));
+    border-color: rgba(124, 154, 194, 0.34);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.92),
+      0 24px 42px rgba(10, 30, 56, 0.28);
+    padding: 1.1rem 1rem 0.95rem;
+    max-width: 460px;
   }
 
   .scoreboard.compact {
@@ -152,10 +169,11 @@
   }
 
   .scoreboard h2 {
-    margin: 0 0 0.5rem 0;
-    font-size: 1.35rem;
-    color: #1f2f44;
-    letter-spacing: 0.02em;
+    margin: 0 0 0.3rem 0;
+    font-size: clamp(1.6rem, 4.3vw, 2rem);
+    line-height: 1.05;
+    color: #23405f;
+    letter-spacing: 0.01em;
   }
 
   .scoreboard.compact h2 {
@@ -164,9 +182,9 @@
   }
 
   .scoreboard .round-info {
-    font-size: 0.85rem;
-    color: #6c7b89;
-    margin-bottom: 1rem;
+    font-size: clamp(1.2rem, 3.1vw, 1.5rem);
+    color: #5e6f82;
+    margin-bottom: 0.75rem;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;
@@ -178,9 +196,9 @@
   }
 
   .scoreboard .target-info {
-    font-size: 0.8rem;
-    color: #5f7183;
-    margin-bottom: 0.85rem;
+    font-size: 0.95rem;
+    color: #667b92;
+    margin-bottom: 0.95rem;
     font-weight: 700;
     letter-spacing: 0.02em;
   }
@@ -191,7 +209,11 @@
   }
 
   .section {
-    margin-bottom: 1rem;
+    margin-bottom: 0.9rem;
+    padding: 0.7rem 0.65rem;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.62);
+    border: 1px solid rgba(129, 158, 195, 0.2);
   }
 
   .scoreboard.compact .section {
@@ -199,11 +221,11 @@
   }
 
   .section-title {
-    font-size: 0.75rem;
-    color: #7a8796;
+    font-size: clamp(1rem, 2.8vw, 1.14rem);
+    color: #66798f;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    margin: 0 0 0.5rem 0;
+    margin: 0 0 0.55rem 0;
     font-weight: 700;
   }
 
@@ -214,16 +236,17 @@
   }
 
   .score-list li {
-    font-size: 1.05rem;
+    font-size: 1.02rem;
     margin: 0.35rem 0;
     color: #2d3f53;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.45rem 0.55rem;
-    border-radius: 8px;
-    border: 1px solid transparent;
-    transition: background-color 0.2s, border-color 0.2s;
+    padding: 0.55rem 0.62rem;
+    border-radius: 10px;
+    border: 1px solid rgba(148, 170, 196, 0.16);
+    background: rgba(255, 255, 255, 0.45);
+    transition: background-color 0.2s, border-color 0.2s, box-shadow 0.2s;
   }
 
   .scoreboard.compact .score-list li {
@@ -233,13 +256,15 @@
   }
 
   .score-list li.leading {
-    background: linear-gradient(90deg, #fff7d6 0%, #ffefba 100%);
-    border-color: #f0d77a;
+    background: linear-gradient(90deg, #fff8dd 0%, #ffefc2 100%);
+    border-color: #ecd488;
     font-weight: 600;
+    box-shadow: 0 8px 16px rgba(224, 184, 92, 0.18);
   }
 
   .hand-row.you {
-    background: rgba(0,0,0,0.03);
+    background: linear-gradient(165deg, rgba(224, 239, 255, 0.88), rgba(208, 230, 251, 0.78));
+    border-color: rgba(80, 137, 190, 0.35);
     font-weight: 700;
   }
 
@@ -249,12 +274,16 @@
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
+    font-size: 0.98rem;
+    color: #2d3f53;
   }
 
   .score {
-    font-weight: bold;
+    font-weight: 800;
     min-width: 50px;
     text-align: right;
+    color: #273c56;
+    font-size: 1rem;
   }
 
   .leader-badge {
@@ -267,20 +296,20 @@
     flex-direction: column;
     gap: 0.25rem;
     text-align: left;
-    border-top: 1px solid rgba(44, 62, 80, 0.12);
-    padding-top: 0.35rem;
+    border-top: 1px solid rgba(44, 62, 80, 0.14);
+    padding-top: 0.45rem;
   }
 
   .hand-row {
     display: grid;
     grid-template-columns: 1fr auto auto;
-    gap: 0.75rem;
+    gap: 0.55rem;
     align-items: center;
     padding: 0.35rem 0.45rem;
-    border-radius: 8px;
-    font-size: 0.9rem;
-    border: 1px solid rgba(44, 62, 80, 0.08);
-    background: rgba(255, 255, 255, 0.65);
+    border-radius: 10px;
+    font-size: 0.88rem;
+    border: 1px solid rgba(44, 62, 80, 0.12);
+    background: rgba(255, 255, 255, 0.78);
   }
 
   .scoreboard.compact .hand-row {
@@ -313,41 +342,21 @@
     min-width: 2.5em;
   }
 
-  .cell-icon {
-    margin-right: 0.2rem;
-    opacity: 0.95;
-  }
-
-  .cell-value-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.2rem;
-    padding: 0.1rem 0.35rem;
-    border-radius: 999px;
-    border: 1px solid rgba(60, 84, 110, 0.2);
-    background: rgba(255, 255, 255, 0.9);
-    font-weight: 600;
-  }
-
-  .bid-chip {
-    border-color: rgba(33, 102, 172, 0.28);
-    background: rgba(224, 240, 255, 0.85);
-  }
-
-  .tricks-chip {
-    border-color: rgba(74, 112, 57, 0.28);
-    background: rgba(231, 245, 229, 0.9);
+  .cell-value {
+    display: inline-block;
+    min-width: 1.3em;
+    text-align: center;
+    font-weight: 800;
+    color: #29496b;
   }
 
   .col-tricks.warning {
     color: #b30000;
   }
 
-  .warning-chip {
-    border-color: rgba(200, 20, 20, 0.55);
-    background: linear-gradient(180deg, rgba(255, 225, 225, 0.95), rgba(255, 203, 203, 0.9));
-    box-shadow: 0 0 0 1px rgba(255, 150, 150, 0.45);
-    font-weight: 700;
+  .warning-value {
+    color: #c01818;
+    text-shadow: 0 0 8px rgba(210, 24, 24, 0.28);
   }
 
   .score-avatar {

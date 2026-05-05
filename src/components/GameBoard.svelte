@@ -11,25 +11,45 @@
   import { getPlayerAvatarUrl } from '../avatarUtils';
   import { startAvatarSwap, stopAllAvatarSwaps } from '../utils/avatarManager';
   import { cardValue } from '../utils/gameUtils';
+  import { soundEffects } from '../utils/soundEffects';
 
   let winnerMessage: string | null = null;
   let showWinner = false;
   let previousTrickLength = 0;
-  let previousTotalTricksWon = 0;
   let scoreboardOpen = false;
   let settingsOpen = false;
   let showTrickCollect = false;
   let trickCollectTargetClass = 'to-center';
   let trickCollectCardCount = 0;
   let trickCollectTimer: ReturnType<typeof setTimeout> | null = null;
+  let trickResultSoundTimer: ReturnType<typeof setTimeout> | null = null;
   let turnPulsePlayerId: string | null = null;
   let showTurnReminder = false;
   let turnReminderTimer: ReturnType<typeof setTimeout> | null = null;
-  let uiScale: 'small' | 'normal' | 'large' = 'normal';
+  let cardsVolume = 100;
+  let jinglesVolume = 100;
+  let gameSpeed: 'slow' | 'normal' | 'fast' = 'normal';
   let showBidAnnouncement = false;
+  function speedMultiplier(): number {
+    if (gameSpeed === 'slow') return 1.35;
+    if (gameSpeed === 'fast') return 0.7;
+    return 1;
+  }
+
+  function scaleMs(ms: number): number {
+    return Math.max(120, Math.round(ms * speedMultiplier()));
+  }
+
+  $: trickCollectAnimationMs = scaleMs(1250);
+
   let bidAnnouncementText: string | null = null;
   let bidAnnouncementTimer: ReturnType<typeof setTimeout> | null = null;
   let previousBidMap: Record<string, number | undefined> = {};
+  let previousState: string | null = null;
+  let previousRoundNumber = 0;
+  let previousLocalHandSize = 0;
+  let previousIsBiddingLocal = false;
+  let previousIsLocalTurnToPlay = false;
 
   $: isBiddingLocal =
     $gameState?.state === 'bidding' &&
@@ -38,6 +58,7 @@
     isLocalPlayer($gameState.players[$gameState.currentPlayer]);
 
   $: isBiddingPhase = $gameState?.state === 'bidding';
+  $: gameSpeed = $gameState?.gameSpeed === 'slow' || $gameState?.gameSpeed === 'fast' ? $gameState.gameSpeed : 'normal';
 
   function toggleScoreboard() {
     scoreboardOpen = !scoreboardOpen;
@@ -103,6 +124,14 @@
     return $gameState.currentTrick[0].card.suit;
   }
 
+  function getTrickLeaderName(): string | null {
+    if (!$gameState || !$gameState.currentTrick.length) return null;
+    const leaderId = $gameState.currentTrick[0].playerId;
+    const leader = $gameState.players.find((p) => p.playerId === leaderId);
+    if (!leader) return null;
+    return getAvatarData(leader.selectedAvatar).name;
+  }
+
   function getSuitSymbol(suit: string): string {
     if (suit === 'spades') return '♠';
     if (suit === 'hearts') return '♥';
@@ -128,15 +157,18 @@
     // Avoid false "can't make it" while a trick is still being resolved.
     if ($gameState.currentTrick.length > 0) return false;
     // If even winning all remaining tricks cannot reach bid, mark red.
-    return player.tricksWon + player.hand.length < player.bid;
+    const remainingTricks = Math.max(...$gameState.players.map((p) => p.hand.length), 0);
+    return player.tricksWon + remainingTricks < player.bid;
   }
 
   onMount(() => {
     document.body.classList.add('game-bg');
-    const storedScale = localStorage.getItem('uiScale');
-    if (storedScale === 'small' || storedScale === 'normal' || storedScale === 'large') {
-      uiScale = storedScale;
-    }
+    const storedCardsVolume = Number(localStorage.getItem('cardsVolume'));
+    const storedJinglesVolume = Number(localStorage.getItem('jinglesVolume'));
+    if (Number.isFinite(storedCardsVolume)) cardsVolume = Math.max(0, Math.min(100, Math.round(storedCardsVolume)));
+    if (Number.isFinite(storedJinglesVolume)) jinglesVolume = Math.max(0, Math.min(100, Math.round(storedJinglesVolume)));
+    soundEffects.setCardsVolume(cardsVolume / 100);
+    soundEffects.setJinglesVolume(jinglesVolume / 100);
     if ($gameState?.players) {
       $gameState.players.forEach((player: Player) => startAvatarSwap(player));
     }
@@ -150,6 +182,10 @@
     if (trickCollectTimer) {
       clearTimeout(trickCollectTimer);
       trickCollectTimer = null;
+    }
+    if (trickResultSoundTimer) {
+      clearTimeout(trickResultSoundTimer);
+      trickResultSoundTimer = null;
     }
     if (turnReminderTimer) {
       clearTimeout(turnReminderTimer);
@@ -196,12 +232,22 @@
 
   $: isLocalTurnToPlay = !!$gameState && !!$localPlayer && $gameState.state === 'tricks' && isLocalTurn;
 
+  $: {
+    if (isLocalTurnToPlay && !previousIsLocalTurnToPlay) {
+      soundEffects.playYourGo();
+    }
+    previousIsLocalTurnToPlay = isLocalTurnToPlay;
+  }
+
   $: if (isLocalTurnToPlay) {
     showTurnReminder = false;
     if (turnReminderTimer) clearTimeout(turnReminderTimer);
     turnReminderTimer = setTimeout(() => {
-      if (isLocalTurnToPlay) showTurnReminder = true;
-    }, 7000);
+      if (isLocalTurnToPlay) {
+        showTurnReminder = true;
+        soundEffects.playYourTurn();
+      }
+    }, 20000);
   } else {
     showTurnReminder = false;
     if (turnReminderTimer) {
@@ -210,19 +256,52 @@
     }
   }
 
-  function setUiScale(scale: 'small' | 'normal' | 'large') {
-    uiScale = scale;
-    localStorage.setItem('uiScale', scale);
+  function setGameSpeed(speed: 'slow' | 'normal' | 'fast') {
+    socket.emit('set_game_speed', { roomId: $roomId, gameSpeed: speed });
+  }
+
+  function setCardsVolume(next: number) {
+    cardsVolume = Math.max(0, Math.min(100, next));
+    localStorage.setItem('cardsVolume', String(cardsVolume));
+    soundEffects.setCardsVolume(cardsVolume / 100);
+  }
+
+  function setJinglesVolume(next: number) {
+    jinglesVolume = Math.max(0, Math.min(100, next));
+    localStorage.setItem('jinglesVolume', String(jinglesVolume));
+    soundEffects.setJinglesVolume(jinglesVolume / 100);
   }
 
   $: if ($gameState?.state === 'tricks') {
     const currentTrickLength = $gameState.currentTrick.length;
     const numPlayers = $gameState.players?.length || 0;
-    const totalTricksWon = $gameState.players.reduce((sum, p) => sum + (p.tricksWon || 0), 0);
-
-    // Trigger collect animation when a trick has actually been awarded.
-    // This is more reliable than waiting for a transient full-trick state.
-    if (totalTricksWon > previousTotalTricksWon && currentTrickLength === 0 && numPlayers > 0) {
+    // Play trick result as soon as all cards are on table (during resolve delay).
+    if (previousTrickLength < numPlayers && currentTrickLength === numPlayers && numPlayers > 0) {
+      const winner = $gameState.players[$gameState.currentPlayer];
+      if (winner) {
+        if (trickResultSoundTimer) {
+          clearTimeout(trickResultSoundTimer);
+          trickResultSoundTimer = null;
+        }
+        if ($localPlayer) {
+          trickResultSoundTimer = setTimeout(() => {
+            if (winner.playerId === $localPlayer!.playerId) {
+              soundEffects.playTrickWin();
+            } else {
+              soundEffects.playTrickLose();
+            }
+            trickResultSoundTimer = null;
+          }, 500);
+        } else {
+          trickResultSoundTimer = setTimeout(() => {
+            soundEffects.playTrickWin();
+            trickResultSoundTimer = null;
+          }, 500);
+        }
+      }
+    }
+    // Trigger collect animation when a trick resolves (full trick -> cleared table).
+    if (previousTrickLength === numPlayers && currentTrickLength === 0 && numPlayers > 0) {
       trickCollectCardCount = numPlayers;
       const winner = $gameState.players[$gameState.currentPlayer];
       if (winner) {
@@ -241,20 +320,18 @@
       trickCollectTimer = setTimeout(() => {
         showTrickCollect = false;
         trickCollectCardCount = 0;
-      }, 1650);
+      }, scaleMs(1650));
       setTimeout(() => {
         turnPulsePlayerId = null;
-      }, 1300);
+      }, scaleMs(1300));
       setTimeout(() => {
         showWinner = false;
         winnerMessage = null;
-      }, 2000);
+      }, scaleMs(2000));
     }
     previousTrickLength = currentTrickLength;
-    previousTotalTricksWon = totalTricksWon;
   } else {
     previousTrickLength = 0;
-    previousTotalTricksWon = $gameState?.players?.reduce((sum, p) => sum + (p.tricksWon || 0), 0) || 0;
   }
 
   $: if ($gameState) {
@@ -278,7 +355,7 @@
         bidAnnouncementTimer = setTimeout(() => {
           showBidAnnouncement = false;
           bidAnnouncementText = null;
-        }, 1600);
+        }, scaleMs(1600));
       }
 
       previousBidMap = currentMap;
@@ -292,6 +369,58 @@
       }
     }
   }
+
+  $: if ($gameState) {
+    if ($gameState.state === 'bidding' && previousState !== 'bidding') {
+      soundEffects.playRoundHandStart();
+    }
+    if (!previousIsBiddingLocal && isBiddingLocal) {
+      soundEffects.playBidDisplay();
+    }
+    if (
+      previousState === 'tricks' &&
+      $gameState.state === 'round_end' &&
+      previousRoundNumber > 0 &&
+      $gameState.roundNumber >= previousRoundNumber
+    ) {
+      if ($localPlayer && typeof $localPlayer.bid === 'number') {
+        if ($localPlayer.bid === $localPlayer.tricksWon) {
+          soundEffects.playHandWin();
+        } else {
+          soundEffects.playHandLose();
+        }
+      } else {
+        soundEffects.playRoundWin();
+      }
+    }
+    previousState = $gameState.state;
+    previousRoundNumber = $gameState.roundNumber;
+    previousIsBiddingLocal = isBiddingLocal;
+  }
+
+  $: if ($localPlayer && $gameState?.state === 'tricks') {
+    const currentSize = $localPlayer.hand.length;
+    if (currentSize < previousLocalHandSize) {
+      soundEffects.playCard();
+    }
+    previousLocalHandSize = currentSize;
+  } else if ($localPlayer) {
+    previousLocalHandSize = $localPlayer.hand.length;
+  } else {
+    previousLocalHandSize = 0;
+  }
+
+  $: localLedSuitToFollow =
+    $gameState &&
+    $gameState.state === 'tricks' &&
+    isLocalTurnToPlay &&
+    $gameState.currentTrick.length > 0
+      ? $gameState.currentTrick[0].card.suit
+      : null;
+  $: localHasOnlyOnePlayableSuit =
+    !!localLedSuitToFollow &&
+    !!$localPlayer &&
+    $localPlayer.hand.some((c) => c.card.suit === localLedSuitToFollow);
 
   // Smart hand sort: alternate red/black where possible, hearts on the right.
   function getSortedHand(hand: OwnedCard[]): OwnedCard[] {
@@ -364,6 +493,7 @@
   $: announcerText = (() => {
     if (!$gameState) return '';
     if (isBiddingLocal) return 'Your turn — place your bid';
+    if (isLocalTurnToPlay) return 'Your turn to play';
     const cp = $gameState.currentPlayer;
     if (cp === undefined || !$gameState.players[cp]) return '';
     const name = getAvatarData($gameState.players[cp].selectedAvatar).name;
@@ -372,6 +502,19 @@
     if ($gameState.state === 'round_end') return `Round ${$gameState.roundNumber} complete`;
     return '';
   })();
+
+  $: roundEndRows = $gameState
+    ? $gameState.players
+        .map((player) => {
+          const bid = player.bid ?? 0;
+          const tricks = player.tricksWon;
+          const isSuccess = bid === tricks;
+          const playerIndex = $gameState.players.findIndex((p) => p.playerId === player.playerId);
+          const totalScore = $gameState.scoreboard?.[playerIndex] ?? 0;
+          return { player, bid, tricks, isSuccess, totalScore };
+        })
+        .sort((a, b) => b.totalScore - a.totalScore)
+    : [];
 </script>
 
 {#if $gameState}
@@ -379,25 +522,23 @@
     class="gameboard"
     class:modal-bidding={isBiddingLocal}
     class:bidding-phase={isBiddingPhase}
-    class:ui-small={uiScale === 'small'}
-    class:ui-large={uiScale === 'large'}
   >
-    <!-- Fixed top bar: always present. In bidding phase the announcer is centered; in tricks we keep room for the scoreboard button. -->
+    <!-- Fixed top bar: always present. Settings stays available in all phases. -->
     <header class="top-bar top-bar-fixed" class:centered={isBiddingPhase}>
       <div class="action-announcer" class:your-turn={isLocalTurn} role="status" aria-live="polite">
         {announcerText || '\u00A0'}
       </div>
-      {#if !isBiddingPhase}
-        <div class="top-bar-actions">
-          <button
-            type="button"
-            class="settings-toggle"
-            aria-label="Open settings"
-            aria-expanded={settingsOpen}
-            on:click={openSettings}
-          >
-            ⚙
-          </button>
+      <div class="top-bar-actions">
+        <button
+          type="button"
+          class="settings-toggle"
+          aria-label="Open settings"
+          aria-expanded={settingsOpen}
+          on:click={openSettings}
+        >
+          ⚙
+        </button>
+        {#if !isBiddingPhase}
           <button
             type="button"
             class="scoreboard-toggle"
@@ -407,8 +548,8 @@
           >
             <span class="scoreboard-icon" aria-hidden="true">📊</span>
           </button>
-        </div>
-      {/if}
+        {/if}
+      </div>
     </header>
 
     {#if scoreboardOpen}
@@ -436,11 +577,39 @@
         <div class="settings-panel">
           <h3>Game Settings</h3>
           <div class="ui-scale-group">
-            <div class="ui-scale-label">UI Scale</div>
+            <div class="ui-scale-label">Game Speed</div>
             <div class="ui-scale-options">
-              <button type="button" class="ui-scale-btn" class:active={uiScale === 'small'} on:click={() => setUiScale('small')}>Small</button>
-              <button type="button" class="ui-scale-btn" class:active={uiScale === 'normal'} on:click={() => setUiScale('normal')}>Normal</button>
-              <button type="button" class="ui-scale-btn" class:active={uiScale === 'large'} on:click={() => setUiScale('large')}>Large</button>
+              <button type="button" class="ui-scale-btn" class:active={gameSpeed === 'slow'} on:click={() => setGameSpeed('slow')}>Slow</button>
+              <button type="button" class="ui-scale-btn" class:active={gameSpeed === 'normal'} on:click={() => setGameSpeed('normal')}>Normal</button>
+              <button type="button" class="ui-scale-btn" class:active={gameSpeed === 'fast'} on:click={() => setGameSpeed('fast')}>Fast</button>
+            </div>
+          </div>
+          <div class="ui-scale-group">
+            <div class="ui-scale-label">Cards Volume ({cardsVolume}%)</div>
+            <div class="volume-options">
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                bind:value={cardsVolume}
+                on:input={() => setCardsVolume(cardsVolume)}
+                aria-label="Cards volume"
+              />
+            </div>
+          </div>
+          <div class="ui-scale-group">
+            <div class="ui-scale-label">Jingles Volume ({jinglesVolume}%)</div>
+            <div class="volume-options">
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                bind:value={jinglesVolume}
+                on:input={() => setJinglesVolume(jinglesVolume)}
+                aria-label="Jingles volume"
+              />
             </div>
           </div>
           <button type="button" class="settings-end-game-btn" on:click={cancelGame}>End Game</button>
@@ -463,12 +632,14 @@
           {biddingSequence}
           forbiddenBid={getForbiddenBid()}
           sortHand={getSortedHand}
-          on:bid={(e) =>
+          on:bid={(e) => {
+            soundEffects.playBidReceived();
             socket.emit('submit_bid', {
               roomId: $gameState.roomId,
               playerIndex: $gameState.currentPlayer,
               bid: e.detail.bid
-            })}
+            });
+          }}
         />
       {:else}
         <!-- Non-local bidding OR tricks OR round_end: show opponents + table + local hand -->
@@ -545,7 +716,7 @@
                   {@const ledSuit = getLedSuit()}
                   {#if ledSuit}
                     <div class="led-suit-indicator">
-                      Led suit: <span
+                      {getTrickLeaderName() || 'Leader'} led suit: <span
                         class="suit-name"
                         class:red-suit={ledSuit === 'hearts' || ledSuit === 'diamonds'}
                         >{ledSuit}</span
@@ -562,7 +733,11 @@
           </div>
 
           {#if showTrickCollect}
-            <div class="trick-collect {trickCollectTargetClass}" aria-hidden="true">
+            <div
+              class="trick-collect {trickCollectTargetClass}"
+              style="--trick-collect-duration: {trickCollectAnimationMs}ms;"
+              aria-hidden="true"
+            >
               {#each Array(Math.max(2, trickCollectCardCount)).fill(0).map((_, i) => i) as i (i)}
                 {@const centerOffset = i - (Math.max(2, trickCollectCardCount) - 1) / 2}
                 <div
@@ -583,34 +758,14 @@
 
         {#if $localPlayer}
           <div class="local-player-panel" class:turn-active={isLocalTurnToPlay}>
-            <div class="hand hand-fanned local-hand" class:turn-highlight={isLocalTurnToPlay}>
-              {#each getSortedHand($localPlayer.hand) as ownedCard, idx (ownedCard.card.id)}
-                {@const len = $localPlayer.hand.length}
-                <div
-                  class="fanned-card"
-                  style="
-                    --card-offset: {idx - (len - 1) / 2};
-                    --fan-lift: {Math.pow(Math.abs(idx - (len - 1) / 2), 2) * 1.6}px;
-                    left: calc(50% - var(--hand-half, 35px) + var(--card-offset) * var(--hand-spread, 30px));
-                    z-index: {idx};
-                    bottom: 0;
-                    transform-origin: bottom center;
-                    transform: rotate(calc(var(--card-offset) * var(--hand-rotate, 14deg))) translateY(calc(var(--hand-base-y, -8px) - var(--fan-lift)));
-                  "
-                >
-                  <Card {ownedCard} />
-                </div>
-              {/each}
-            </div>
             <div
               class="local-player-meta"
               class:active-turn={isLocalTurn}
               class:recent-winner={turnPulsePlayerId === $localPlayer.playerId}
             >
               <img src={getPlayerAvatarUrl($localPlayer)} alt="Your Avatar" class="local-avatar" />
-              <div class="local-name">{getAvatarData($localPlayer.selectedAvatar).name}</div>
               {#if !isBiddingPhase}
-                <div class="player-hand-stats local-stats">
+                <div class="player-hand-stats local-stats local-inline-stats">
                   <div class="stat-line">
                     <span class="stat-icon">🎯</span> Bid: {typeof $localPlayer.bid === 'number' ? $localPlayer.bid : '—'}
                   </div>
@@ -619,6 +774,27 @@
                   </div>
                 </div>
               {/if}
+            </div>
+            <div class="hand hand-fanned local-hand" class:turn-highlight={isLocalTurnToPlay}>
+              {#each getSortedHand($localPlayer.hand) as ownedCard, idx (ownedCard.card.id)}
+                {@const len = $localPlayer.hand.length}
+                {@const isFollowSuitCard = !!localLedSuitToFollow && ownedCard.card.suit === localLedSuitToFollow}
+                <div
+                  class="fanned-card"
+                  class:follow-suit-front={localHasOnlyOnePlayableSuit && isFollowSuitCard}
+                  style="
+                    --card-offset: {idx - (len - 1) / 2};
+                    --fan-lift: {Math.pow(Math.abs(idx - (len - 1) / 2), 2) * 1.6}px;
+                    left: calc(50% - var(--hand-half, 35px) + var(--card-offset) * var(--hand-spread, 30px));
+                    z-index: {localHasOnlyOnePlayableSuit && isFollowSuitCard ? idx + 120 : idx};
+                    bottom: 0;
+                    transform-origin: bottom center;
+                    transform: rotate(calc(var(--card-offset) * var(--hand-rotate, 14deg))) translateY(calc(var(--hand-base-y, -8px) - var(--fan-lift)));
+                  "
+                >
+                  <Card {ownedCard} />
+                </div>
+              {/each}
             </div>
           </div>
         {/if}
@@ -629,26 +805,25 @@
       <div class="round-end-overlay">
         <div class="round-end-content">
           <h2>Round {$gameState.roundNumber} Complete!</h2>
-          <div class="round-results">
-            {#each $gameState.players as player (player.playerId)}
-              {@const bid = player.bid ?? 0}
-              {@const tricks = player.tricksWon}
-              {@const isSuccess = bid === tricks}
-              {@const score = isSuccess ? 1 : 0}
-              <div class="player-result" class:success={isSuccess} class:failure={!isSuccess}>
-                <span class="player-name">{getAvatarData(player.selectedAvatar).name}</span>
-                <span class="result-details">
-                  Bid: {bid} | Tricks: {tricks} | Points: {score}
-                  {#if isSuccess}
-                    <span class="bonus">✓ Success!</span>
-                  {:else}
-                    <span class="failure-text">✗ Failed</span>
-                  {/if}
+          <div class="hand-end-summary">
+            <div class="hand-end-header">
+              <span>Player</span>
+              <span>Bid</span>
+              <span>Tricks</span>
+              <span>Total points</span>
+            </div>
+            {#each roundEndRows as row (row.player.playerId)}
+              <div class="hand-end-row" class:success={row.isSuccess} class:failure={!row.isSuccess}>
+                <span class="hand-end-player">
+                  <img src={row.player.inGameAvatar || getPlayerAvatarUrl(row.player)} alt="" class="hand-end-avatar" />
+                  {getAvatarData(row.player.selectedAvatar).name}
                 </span>
+                <span class="hand-end-num">{row.bid}</span>
+                <span class="hand-end-num">{row.tricks}</span>
+                <span class="hand-end-total">{row.totalScore}</span>
               </div>
             {/each}
           </div>
-          <Scoreboard />
           <button class="next-round-button" on:click={startNextRound}>
             {#if Object.values($gameState.scoreboard || {}).some((s) => s >= 5)}
               View Final Scores
@@ -773,12 +948,19 @@
   }
   /* In bidding, the announcer is centred in the full bar */
   .top-bar.centered {
-    justify-content: center;
+    justify-content: flex-start;
+    padding-right: 3.35rem;
+  }
+  .top-bar.centered .top-bar-actions {
+    position: absolute;
+    right: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
   }
   .top-bar.centered .action-announcer {
     margin: 0 auto;
-    max-width: min(92vw, 640px);
-    width: auto;
+    max-width: min(86vw, 640px);
+    width: 100%;
   }
 
   .action-announcer {
@@ -895,6 +1077,15 @@
   .ui-scale-options {
     display: flex;
     gap: 0.35rem;
+  }
+  .volume-options {
+    display: flex;
+    align-items: center;
+  }
+  .volume-options input[type='range'] {
+    width: 100%;
+    accent-color: #004c8c;
+    cursor: pointer;
   }
   .ui-scale-btn {
     flex: 1;
@@ -1100,7 +1291,7 @@
     margin-bottom: 0.5rem;
   }
   .trick-row .played-card + .played-card {
-    margin-left: -18px;
+    margin-left: clamp(-6px, -1vw, -2px);
   }
   .played-card {
     position: relative;
@@ -1119,9 +1310,13 @@
   .played-card.winning-card {
     transform: translateY(-10px) scale(1.05);
     z-index: 10;
-    box-shadow: 0 4px 20px rgba(255, 215, 0, 0.6);
-    border: 3px solid gold;
-    border-radius: 8px;
+  }
+  .played-card.winning-card :global(.card) {
+    box-shadow:
+      0 6px 18px rgba(255, 215, 0, 0.45),
+      0 0 0 3px rgba(255, 215, 0, 0.92);
+    border-color: rgba(255, 215, 0, 0.95);
+    border-radius: clamp(4px, 1vw, 6px);
   }
   .played-card :global(.card.unplayable) {
     opacity: 1;
@@ -1158,18 +1353,19 @@
   }
   .winner-banner {
     position: absolute;
-    top: clamp(8px, 6%, 24px);
-    right: clamp(8px, 2vw, 20px);
-    left: auto;
-    transform: none;
+    bottom: clamp(-42px, -2.6vh, -18px);
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
     background: rgba(255, 255, 255, 0.9);
-    padding: clamp(0.6rem, 2vw, 1rem) clamp(1rem, 3vw, 2rem);
+    padding: clamp(0.38rem, 1.2vw, 0.5rem) clamp(0.7rem, 2.2vw, 0.95rem);
     border-radius: clamp(8px, 2vw, 12px);
-    font-size: clamp(1rem, 3.5vw, 1.4rem);
-    font-weight: bold;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
-    z-index: 20;
+    font-size: clamp(0.82rem, 2.1vw, 0.95rem);
+    font-weight: 700;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.24);
+    z-index: 25;
     text-align: center;
+    white-space: nowrap;
   }
   .bid-banner {
     position: absolute;
@@ -1190,17 +1386,20 @@
   }
   .turn-reminder-banner {
     position: absolute;
-    bottom: clamp(132px, 24vh, 190px);
+    bottom: clamp(210px, 37vh, 300px);
     left: 50%;
     transform: translateX(-50%);
-    background: rgba(255, 249, 221, 0.96);
-    color: #1f2f44;
-    border: 1px solid rgba(230, 187, 75, 0.65);
+    background: linear-gradient(165deg, #ffe9a9 0%, #ffd66a 100%);
+    color: #2d2a1f;
+    border: 1px solid rgba(183, 132, 15, 0.55);
     border-radius: 10px;
     padding: 0.42rem 0.86rem;
     font-size: clamp(0.82rem, 2.2vw, 0.98rem);
     font-weight: 700;
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.62),
+      0 9px 20px rgba(255, 207, 92, 0.34);
     z-index: 36;
     pointer-events: none;
     animation: bidBannerPop 0.22s ease-out;
@@ -1250,12 +1449,13 @@
   .local-player-panel {
     flex: 0 0 auto;
     display: flex;
-    flex-direction: row;
-    align-items: flex-end;
+    flex-direction: column;
+    align-items: stretch;
     justify-content: center;
-    gap: clamp(0.4rem, 1.2vw, 0.8rem);
+    gap: clamp(0.25rem, 0.8vh, 0.55rem);
     width: 100%;
-    padding: 0.25rem 0.6rem max(1rem, 3vh);
+    max-width: 100vw;
+    padding: 0.25rem 0.35rem max(1rem, 3vh);
     box-sizing: border-box;
     z-index: 10;
     min-height: 0;
@@ -1263,32 +1463,27 @@
   .local-player-meta {
     position: relative;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
-    justify-content: flex-end;
-    min-width: clamp(74px, 14vw, 130px);
-    margin-bottom: clamp(0.2rem, 1vh, 0.45rem);
+    justify-content: center;
+    align-self: center;
+    gap: clamp(0.35rem, 1vw, 0.6rem);
+    min-width: 0;
+    margin-bottom: 0;
+    margin-top: 0.1rem;
+    margin-bottom: clamp(0.32rem, 0.9vh, 0.52rem);
+    padding-right: 0;
   }
   .local-avatar {
-    width: clamp(56px, 11vw, 84px);
-    height: clamp(56px, 11vw, 84px);
+    width: clamp(46px, 9vw, 66px);
+    height: clamp(46px, 9vw, 66px);
     border-radius: 50%;
     border: clamp(2px, 0.5vw, 3px) solid #fff;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-    margin-bottom: clamp(0.25rem, 1vh, 0.5rem);
+    margin-bottom: 0;
     background: transparent;
     object-fit: contain;
   }
-  .local-name {
-    font-size: clamp(0.9rem, 2.6vw, 1.2rem);
-    font-weight: 700;
-    color: #fff;
-    margin-bottom: clamp(0.25rem, 1vh, 0.5rem);
-    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-    text-align: center;
-    white-space: nowrap;
-  }
-
   .hand {
     display: flex;
     gap: 0.5rem;
@@ -1302,8 +1497,8 @@
     position: relative;
     height: clamp(96px, 20vh, 130px);
     min-width: clamp(220px, 58vw, 320px);
-    max-width: 100%;
-    width: fit-content;
+    max-width: calc(100vw - 0.7rem);
+    width: 100%;
     margin: 0 auto;
     pointer-events: auto;
   }
@@ -1337,7 +1532,7 @@
     z-index: 34;
     pointer-events: none;
     opacity: 0;
-    animation: trickCollectTravel 1.25s cubic-bezier(0.2, 0.75, 0.2, 1) forwards;
+    animation: trickCollectTravel var(--trick-collect-duration, 1250ms) cubic-bezier(0.2, 0.75, 0.2, 1) forwards;
     filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.3));
   }
   .trick-collect-card {
@@ -1353,7 +1548,7 @@
       0 0 20px rgba(255, 227, 118, 0.45);
     left: 8px;
     top: 8px;
-    animation: trickCollectCollapse 1.25s cubic-bezier(0.2, 0.75, 0.2, 1) forwards;
+    animation: trickCollectCollapse var(--trick-collect-duration, 1250ms) cubic-bezier(0.2, 0.75, 0.2, 1) forwards;
   }
 
   .trick-collect.to-local {
@@ -1460,20 +1655,6 @@
     padding: 0.07rem 0.32rem;
     animation: warningPulse 1.2s ease-in-out infinite;
   }
-  .gameboard.ui-small {
-    --ui-card-scale: 0.92;
-  }
-  .gameboard.ui-large {
-    --ui-card-scale: 1.08;
-  }
-  .gameboard.ui-small :global(.card) {
-    transform: scale(var(--ui-card-scale));
-    transform-origin: bottom center;
-  }
-  .gameboard.ui-large :global(.card) {
-    transform: scale(var(--ui-card-scale));
-    transform-origin: bottom center;
-  }
   @keyframes warningPulse {
     0%,
     100% {
@@ -1487,12 +1668,20 @@
   }
   .local-player-panel .hand-fanned {
     flex: 0 0 auto;
+    width: 100%;
+    min-width: 0;
+    max-width: calc(100vw - 1.2rem);
   }
   .local-hand {
-    --hand-half: clamp(24px, 5vw, 36px);
-    --hand-spread: clamp(22px, 4vw, 32px);
+    --hand-half: clamp(26px, 5.5vw, 42px);
+    --hand-spread: clamp(34px, 6.1vw, 50px);
     --hand-rotate: 14deg;
     --hand-base-y: -8px;
+  }
+  .local-inline-stats {
+    margin-top: 0;
+    align-items: flex-start;
+    padding: 0.22rem 0.52rem;
   }
 
   .fanned-card {
@@ -1511,6 +1700,9 @@
     z-index: 100;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18), 0 0 0 2px rgba(255, 255, 255, 0.65);
     filter: brightness(1.04) saturate(1.08);
+  }
+  .fanned-card.follow-suit-front {
+    filter: saturate(1.08) brightness(1.02);
   }
   @media (hover: none) {
     .fanned-card:active {
@@ -1534,7 +1726,7 @@
     background: #fff;
     border-radius: 16px;
     padding: 1.5rem 1.75rem;
-    max-width: 600px;
+    max-width: 680px;
     width: 92%;
     max-height: 90vh;
     overflow-y: auto;
@@ -1598,6 +1790,94 @@
     margin-top: 0.75rem;
     touch-action: manipulation;
   }
+
+  .hand-end-summary {
+    margin-top: 0.35rem;
+    margin-bottom: 0.75rem;
+    border: 1px solid rgba(136, 164, 201, 0.3);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.74);
+    padding: 0.6rem 0.55rem;
+  }
+  .hand-end-header,
+  .hand-end-row {
+    display: grid;
+    grid-template-columns: minmax(112px, 1.8fr) minmax(36px, 0.6fr) minmax(48px, 0.72fr) minmax(70px, 0.9fr);
+    gap: 0.35rem;
+    align-items: center;
+  }
+  .hand-end-header {
+    color: #5f748d;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 0.2rem 0.42rem 0.35rem;
+    border-bottom: 1px solid rgba(120, 146, 177, 0.24);
+    margin-bottom: 0.25rem;
+  }
+  .hand-end-header span:not(:first-child) {
+    text-align: center;
+  }
+  .hand-end-row {
+    padding: 0.44rem 0.42rem;
+    border-radius: 10px;
+    border: 1px solid rgba(120, 146, 177, 0.16);
+    margin-bottom: 0.26rem;
+    background: rgba(255, 255, 255, 0.72);
+  }
+  .hand-end-row.success {
+    background: linear-gradient(165deg, rgba(226, 248, 233, 0.9), rgba(213, 243, 223, 0.84));
+    border-color: rgba(79, 174, 109, 0.32);
+  }
+  .hand-end-row.failure {
+    background: linear-gradient(165deg, rgba(255, 234, 237, 0.9), rgba(255, 220, 224, 0.82));
+    border-color: rgba(227, 77, 96, 0.34);
+  }
+  .hand-end-player {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.32rem;
+    min-width: 0;
+    font-weight: 700;
+    color: #2c4058;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .hand-end-avatar {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 1px solid rgba(68, 96, 132, 0.24);
+    object-fit: contain;
+    flex: 0 0 auto;
+  }
+  .hand-end-num,
+  .hand-end-total {
+    text-align: center;
+    font-weight: 800;
+    color: #2a4563;
+  }
+
+  @media (max-width: 600px) {
+    .hand-end-header,
+    .hand-end-row {
+      grid-template-columns: minmax(92px, 1.7fr) minmax(32px, 0.58fr) minmax(42px, 0.68fr) minmax(66px, 0.86fr);
+      gap: 0.26rem;
+    }
+    .hand-end-header {
+      font-size: 0.66rem;
+    }
+    .hand-end-row {
+      font-size: 0.88rem;
+      padding: 0.38rem 0.28rem;
+    }
+    .hand-end-avatar {
+      width: 20px;
+      height: 20px;
+    }
+  }
   .next-round-button:hover {
     background-color: #00b7c2;
   }
@@ -1615,13 +1895,10 @@
       min-height: clamp(110px, 20vh, 160px);
     }
     .winner-banner {
-      top: clamp(6px, 4%, 18px);
-      right: clamp(6px, 2vw, 14px);
-      padding: clamp(0.45rem, 1.4vw, 0.75rem) clamp(0.7rem, 2.2vw, 1.2rem);
-      font-size: clamp(0.85rem, 2.4vw, 1.05rem);
-      max-width: min(46vw, 260px);
-      white-space: normal;
-      text-align: center;
+      bottom: clamp(-34px, -2vh, -14px);
+      padding: 0.34rem 0.64rem;
+      font-size: clamp(0.76rem, 2.2vw, 0.9rem);
+      max-width: min(78vw, 300px);
     }
   }
 
@@ -1657,28 +1934,26 @@
     .opponent-name { font-size: 0.6rem; }
 
     .local-player-panel {
-      padding: 0.25rem 0.4rem max(0.7rem, 2vh);
+      padding: 0.25rem 0.55rem max(0.7rem, 2vh);
       gap: 0.35rem;
     }
     .local-player-meta {
-      min-width: clamp(60px, 20vw, 100px);
+      align-self: center;
+      padding-right: 0.1rem;
+      gap: 0.35rem;
     }
     .local-avatar {
       width: clamp(46px, 10vw, 66px);
       height: clamp(46px, 10vw, 66px);
     }
-    .local-name {
-      font-size: 0.88rem;
-      margin-bottom: 0.15rem;
-    }
-
     .hand-fanned {
-      min-width: clamp(170px, 60vw, 240px);
+      min-width: 0;
+      max-width: calc(100vw - 1.1rem);
       height: clamp(84px, 16vh, 110px);
     }
     .local-hand {
-      --hand-half: 22px;
-      --hand-spread: 19px;
+      --hand-half: 24px;
+      --hand-spread: 28px;
       --hand-rotate: 12deg;
       --hand-base-y: -4px;
     }
@@ -1687,10 +1962,9 @@
       height: clamp(72px, 14vw, 100px);
     }
     .winner-banner {
-      top: clamp(6px, 3%, 14px);
-      right: clamp(6px, 2vw, 10px);
-      max-width: min(48vw, 210px);
-      font-size: clamp(0.78rem, 2.6vw, 0.95rem);
+      bottom: clamp(-30px, -1.8vh, -10px);
+      max-width: min(84vw, 280px);
+      font-size: clamp(0.72rem, 2.4vw, 0.86rem);
     }
     .local-player-panel :global(.card) {
       width: 52px;
@@ -1706,13 +1980,21 @@
     .action-announcer { font-size: 0.78rem; }
     .local-player-panel {
       gap: 0.25rem;
-      padding: 0.2rem 0.35rem max(0.5rem, 1.5vh);
+      padding: 0.2rem 0.2rem max(0.5rem, 1.5vh);
     }
     .local-avatar { width: 42px; height: 42px; }
-    .local-name { font-size: 0.8rem; }
     .hand-fanned {
-      min-width: clamp(150px, 70vw, 210px);
+      min-width: 0;
+      max-width: calc(100vw - 1.2rem);
       height: clamp(78px, 14vh, 98px);
+    }
+    .local-hand {
+      --hand-half: 24px;
+      --hand-spread: 27px;
+    }
+    .local-player-panel :global(.card) {
+      width: 58px;
+      height: 86px;
     }
     .opponents {
       height: clamp(80px, 24%, 140px);
@@ -1721,9 +2003,9 @@
       top: clamp(80px, 24%, 140px);
     }
     .winner-banner {
-      max-width: min(55vw, 190px);
-      font-size: clamp(0.72rem, 3vw, 0.88rem);
-      padding: 0.35rem 0.6rem;
+      max-width: min(88vw, 260px);
+      font-size: clamp(0.7rem, 2.9vw, 0.82rem);
+      padding: 0.3rem 0.55rem;
     }
   }
 
@@ -1744,5 +2026,155 @@
     .hand-fanned {
       height: clamp(64px, 22vh, 95px);
     }
+  }
+
+  .gameboard {
+    background:
+      radial-gradient(120% 90% at 50% 42%, rgba(30, 150, 97, 0.5), rgba(9, 66, 42, 0.55) 60%),
+      linear-gradient(150deg, #0a5134 0%, #0a3f2c 52%, #072f24 100%);
+  }
+
+  .top-bar-fixed {
+    background: linear-gradient(165deg, rgba(7, 40, 30, 0.86), rgba(8, 53, 38, 0.82));
+    border-bottom: 1px solid rgba(176, 231, 206, 0.22);
+    box-shadow: 0 10px 24px rgba(3, 14, 11, 0.4);
+    backdrop-filter: blur(12px);
+  }
+
+  .action-announcer {
+    background: linear-gradient(170deg, rgba(5, 27, 20, 0.72), rgba(9, 43, 32, 0.72));
+    border: 1px solid rgba(176, 231, 206, 0.22);
+    border-radius: 999px;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.12),
+      0 8px 20px rgba(0, 0, 0, 0.3);
+  }
+
+  .action-announcer.your-turn {
+    background: linear-gradient(165deg, #ffe9a9 0%, #ffd66a 100%);
+    border-color: rgba(183, 132, 15, 0.55);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.65),
+      0 9px 20px rgba(255, 207, 92, 0.38);
+  }
+
+  .settings-toggle,
+  .scoreboard-toggle {
+    border-radius: 11px;
+    border: 1px solid rgba(185, 238, 214, 0.25);
+    background: linear-gradient(160deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.1));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.28),
+      0 7px 16px rgba(0, 0, 0, 0.25);
+    transition:
+      transform 130ms ease,
+      background 180ms ease,
+      box-shadow 180ms ease;
+  }
+
+  .settings-toggle:hover,
+  .scoreboard-toggle:hover {
+    transform: translateY(-1px);
+    background: linear-gradient(160deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.17));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.35),
+      0 10px 20px rgba(0, 0, 0, 0.28);
+  }
+
+  .settings-panel,
+  .scoreboard-overlay-panel,
+  .round-end-content {
+    border-radius: 18px;
+    border: 1px solid rgba(147, 172, 208, 0.35);
+    background:
+      radial-gradient(120% 100% at 12% -20%, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0) 56%),
+      linear-gradient(160deg, rgba(247, 250, 255, 0.94), rgba(233, 240, 249, 0.92));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.9),
+      0 20px 40px rgba(12, 31, 56, 0.28);
+    backdrop-filter: blur(10px);
+  }
+
+  .opponent-seat .opponent-name,
+  .local-name {
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
+
+  .player-hand-stats {
+    background: linear-gradient(170deg, rgba(8, 33, 24, 0.56), rgba(9, 27, 21, 0.48));
+    border: 1px solid rgba(190, 241, 218, 0.2);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      0 8px 16px rgba(0, 0, 0, 0.25);
+  }
+
+  .opponent-avatar,
+  .local-avatar {
+    box-shadow:
+      0 12px 20px rgba(4, 20, 13, 0.33),
+      0 0 0 1px rgba(255, 255, 255, 0.24);
+  }
+
+  .table {
+    background:
+      radial-gradient(130% 100% at 50% 35%, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0) 64%),
+      linear-gradient(170deg, rgba(7, 37, 26, 0.4), rgba(4, 23, 16, 0.46));
+    border-radius: 18px;
+    border: 1px solid rgba(170, 230, 203, 0.18);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.1),
+      0 16px 30px rgba(0, 0, 0, 0.28);
+  }
+
+  .led-suit-indicator,
+  .winner-banner,
+  .bid-banner,
+  .turn-reminder-banner {
+    border-radius: 12px;
+    border: 1px solid rgba(133, 162, 199, 0.34);
+    box-shadow: 0 10px 22px rgba(13, 35, 59, 0.24);
+  }
+
+  .hand-fanned.turn-highlight {
+    border: 1px solid rgba(164, 243, 202, 0.46);
+    background:
+      radial-gradient(90% 95% at 50% 85%, rgba(123, 221, 170, 0.27), rgba(14, 66, 43, 0.18) 70%),
+      linear-gradient(180deg, rgba(18, 94, 60, 0.3), rgba(10, 62, 39, 0.42));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.16),
+      0 0 0 2px rgba(50, 143, 100, 0.36),
+      0 14px 25px rgba(0, 0, 0, 0.28);
+  }
+
+  .fanned-card {
+    border-radius: 10px;
+  }
+
+  .fanned-card:hover {
+    box-shadow:
+      0 9px 16px rgba(0, 0, 0, 0.25),
+      0 0 0 2px rgba(255, 255, 255, 0.68);
+  }
+
+  .next-round-button,
+  .settings-close-btn,
+  .settings-end-game-btn,
+  .ui-scale-btn {
+    transition:
+      transform 120ms ease,
+      box-shadow 180ms ease,
+      background 180ms ease,
+      border-color 180ms ease;
+  }
+
+  .next-round-button {
+    background: linear-gradient(165deg, #286ee7 0%, #1f58c7 100%);
+    box-shadow: 0 10px 22px rgba(24, 81, 186, 0.34);
+  }
+
+  .next-round-button:hover {
+    background: linear-gradient(165deg, #2f76f1 0%, #245fce 100%);
+    transform: translateY(-1px);
   }
 </style>

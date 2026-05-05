@@ -23,7 +23,8 @@ export class RoomManager {
       state: 'lobby',
       scoreboard: {},
       roundNumber: 0,
-      winningScore: 5
+      winningScore: 5,
+      gameSpeed: 'normal'
     };
 
     return this.rooms[roomId];

@@ -45,6 +45,16 @@ app.get(/^(?!\/socket\.io).*/, (_req, res) => {
 
 const roomManager = new RoomManager();
 
+function speedMultiplier(speed: string | undefined): number {
+  if (speed === 'slow') return 1.35;
+  if (speed === 'fast') return 0.7;
+  return 1;
+}
+
+function scaleRoomMs(room: { gameSpeed?: string }, ms: number): number {
+  return Math.max(120, Math.round(ms * speedMultiplier(room.gameSpeed)));
+}
+
 function startNextRoundInternal(roomId: string, isInitialStart = false): boolean {
   const room = roomManager.getRoom(roomId);
   if (!room) return false;
@@ -100,7 +110,7 @@ function finishRoundAndAdvanceOrEnd(roomId: string): void {
     if (startNextRoundInternal(roomId, false)) {
       io.to(roomId).emit('state_updated', latest);
     }
-  }, 15000);
+  }, scaleRoomMs(room, 15000));
 }
 
 function resetRoomToLobby(roomId: string): boolean {
@@ -197,6 +207,14 @@ io.on('connection', (socket) => {
 
     // Keep target score in a sane range.
     room.winningScore = Math.max(1, Math.min(5, Math.floor(nextScore)));
+    io.to(roomId).emit('state_updated', room);
+  });
+
+  socket.on('set_game_speed', ({ roomId, gameSpeed }: { roomId: string; gameSpeed: 'slow' | 'normal' | 'fast' }) => {
+    const room = roomManager.getRoom(roomId);
+    if (!room) return;
+    const nextSpeed = gameSpeed === 'slow' || gameSpeed === 'fast' ? gameSpeed : 'normal';
+    room.gameSpeed = nextSpeed;
     io.to(roomId).emit('state_updated', room);
   });
 
@@ -313,7 +331,7 @@ io.on('connection', (socket) => {
           return;
         }
         io.to(roomId).emit('state_updated', latest);
-      }, 5000);
+      }, scaleRoomMs(room, 5000));
       return;
     } else {
       // Move to next player

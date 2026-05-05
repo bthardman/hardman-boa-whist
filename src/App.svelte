@@ -4,6 +4,7 @@
   import Lobby from './components/Lobby.svelte';
   import GameBoard from './components/GameBoard.svelte';
   import WinnerScreen from './components/WinnerScreen.svelte';
+  import { soundEffects } from './utils/soundEffects';
   import { onMount, onDestroy } from 'svelte';
   import {
     setupSocketHandlers,
@@ -13,15 +14,30 @@
   } from './utils/socketHandlers';
 
   let joinBlockedMessage = '';
+  let buttonClickHandler: ((event: MouseEvent) => void) | null = null;
 
   onMount(() => {
     setupSocketHandlers();
+    buttonClickHandler = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const button = target.closest('button');
+      if (!button) return;
+      if (button.hasAttribute('disabled')) return;
+      if (button.dataset.noButtonSound === 'true') return;
+      soundEffects.playButton();
+    };
+    document.addEventListener('click', buttonClickHandler);
     registerErrorHandler('join_error', (message) => {
       joinBlockedMessage = message || 'Game in progress. Please wait for the next game.';
     });
   });
 
   onDestroy(() => {
+    if (buttonClickHandler) {
+      document.removeEventListener('click', buttonClickHandler);
+      buttonClickHandler = null;
+    }
     unregisterErrorHandler('join_error');
     cleanupSocketHandlers();
   });

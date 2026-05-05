@@ -34,6 +34,7 @@ export type Player = {
 };
 
 export type State = 'lobby' | 'bidding' | 'tricks' | 'round_end' | 'winner';
+export type GameSpeed = 'slow' | 'normal' | 'fast';
 
 export type GameState = {
   roomId: string;
@@ -47,4 +48,5 @@ export type GameState = {
   roundNumber: number; // current round number
   maxRounds?: number; // optional: max rounds before game ends
   winningScore?: number; // optional: score threshold to win
+  gameSpeed?: GameSpeed; // optional: timing speed preference for round flow
 };

@@ -6,6 +6,7 @@
   import type { Player } from '../../shared/types';
   import { registerErrorHandler, unregisterErrorHandler } from '../utils/socketHandlers';
   import { onMount, onDestroy } from 'svelte';
+  import { soundEffects } from '../utils/soundEffects';
 
   let errorMessage = '';
   let showConfirm = false;
@@ -14,6 +15,7 @@
   onMount(() => {
     document.body.classList.add('winner-bg');
     document.documentElement.classList.add('winner-bg');
+    soundEffects.playGameEnd();
     registerErrorHandler('start_game_error', (message) => {
       errorMessage = message;
       showConfirm = false;
@@ -49,6 +51,7 @@
   function confirmResetAndProceed() {
     if (!$gameState || !confirmMode) return;
     if (confirmMode === 'rematch') {
+      soundEffects.playGameStart();
       socket.emit('rematch_game', { roomId: $gameState.roomId });
     } else {
       socket.emit('cancel_game', { roomId: $gameState.roomId });

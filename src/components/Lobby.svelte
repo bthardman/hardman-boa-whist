@@ -1,21 +1,49 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import { gameState, roomId, localPlayer } from '../store';
   import type { Player } from '../../shared/types';
   import { AvatarChoice } from '../../shared/types';
   import { socket } from "../socket";
   import { getAvatarData, getPlayerName } from '../avatarData';
   import { registerErrorHandler, unregisterErrorHandler } from '../utils/socketHandlers';
+  import { soundEffects } from '../utils/soundEffects';
 
   let errorMessage = '';
   let blockedMessage = '';
   let settingsOpen = false;
   let localWinningScore = 5;
   const winningScoreOptions = [1, 2, 3, 4, 5];
+  const preferredAvatarOrder = ['Tony', 'Rowan', 'Brad', 'Carol', 'Derek', 'Angela', 'Vanessa', 'Afroditi'];
+  const avatarChoices = (
+    Object.values(AvatarChoice).filter((c) => c !== AvatarChoice.UNDEFINED) as AvatarChoice[]
+  ).sort((a, b) => {
+    const nameA = getPlayerName(a);
+    const nameB = getPlayerName(b);
+    const idxA = preferredAvatarOrder.indexOf(nameA);
+    const idxB = preferredAvatarOrder.indexOf(nameB);
+    const rankA = idxA === -1 ? Number.MAX_SAFE_INTEGER : idxA;
+    const rankB = idxB === -1 ? Number.MAX_SAFE_INTEGER : idxB;
+    if (rankA !== rankB) return rankA - rankB;
+    return nameA.localeCompare(nameB);
+  });
+  let carouselIndex = 0;
+  let lobbyScroller: HTMLDivElement | null = null;
+  let carouselCards: Array<HTMLDivElement | null> = [];
+  let isAdjustingLoop = false;
+  let centerLockTimer: ReturnType<typeof setTimeout> | null = null;
+  $: hasInfiniteCarousel = avatarChoices.length > 1;
+  $: carouselRenderChoices = hasInfiniteCarousel
+    ? [avatarChoices[avatarChoices.length - 1], ...avatarChoices, avatarChoices[0]]
+    : avatarChoices;
 
   $: localWinningScore = $gameState?.winningScore ?? 5;
+  $: if ($localPlayer && $localPlayer.selectedAvatar !== AvatarChoice.UNDEFINED) {
+    const selectedIndex = avatarChoices.findIndex((c) => c === $localPlayer?.selectedAvatar);
+    if (selectedIndex >= 0) carouselIndex = selectedIndex;
+  }
 
   function startGame() {
+    soundEffects.playGameStart();
     socket.emit("start_game", { roomId: $roomId });
   }
 
@@ -54,6 +82,11 @@
     registerErrorHandler("avatar_selection_error", handleError);
     registerErrorHandler("start_game_error", handleError);
     registerErrorHandler("join_error", handleJoinBlocked);
+    void tick().then(() => {
+      if (hasInfiniteCarousel) {
+        scrollToDisplayIndex(1, 'auto');
+      }
+    });
 
     return () => {
       unregisterErrorHandler("avatar_selection_error");
@@ -68,6 +101,10 @@
     unregisterErrorHandler("avatar_selection_error");
     unregisterErrorHandler("start_game_error");
     unregisterErrorHandler("join_error");
+    if (centerLockTimer) {
+      clearTimeout(centerLockTimer);
+      centerLockTimer = null;
+    }
     document.body.classList.remove('lobby-bg');
     document.documentElement.classList.remove('lobby-bg');
   });
@@ -99,6 +136,7 @@
       playerId: $localPlayer.playerId, 
       avatarChoice
     });
+    soundEffects.playAvatarSelect();
   }
 
   function canStartGame(players: Player[]): boolean {
@@ -129,6 +167,114 @@
     }
     return '#aaa'; // Waiting text can remain orange
   }
+
+  function scrollToCarouselIndex(index: number, behavior: ScrollBehavior = 'smooth') {
+    if (avatarChoices.length === 0) return;
+    const wrapped = ((index % avatarChoices.length) + avatarChoices.length) % avatarChoices.length;
+    carouselIndex = wrapped;
+    const displayIndex = hasInfiniteCarousel ? wrapped + 1 : wrapped;
+    const card = carouselCards[displayIndex];
+    if (card) {
+      card.scrollIntoView({ behavior, block: 'nearest', inline: 'center' });
+    }
+  }
+
+  function scrollToDisplayIndex(displayIndex: number, behavior: ScrollBehavior = 'smooth') {
+    const card = carouselCards[displayIndex];
+    if (card) {
+      card.scrollIntoView({ behavior, block: 'nearest', inline: 'center' });
+    }
+  }
+
+  function getNearestDisplayInfo(): { index: number; distance: number } {
+    if (!lobbyScroller || carouselCards.length === 0) {
+      return { index: hasInfiniteCarousel ? carouselIndex + 1 : carouselIndex, distance: 0 };
+    }
+    const scrollerCenter = lobbyScroller.scrollLeft + lobbyScroller.clientWidth / 2;
+    let nearestDisplay = hasInfiniteCarousel ? carouselIndex + 1 : carouselIndex;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    carouselCards.forEach((card, idx) => {
+      if (!card) return;
+      const cardCenter = card.offsetLeft + card.clientWidth / 2;
+      const distance = Math.abs(cardCenter - scrollerCenter);
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestDisplay = idx;
+      }
+    });
+    return { index: nearestDisplay, distance: nearestDistance };
+  }
+
+  function scheduleCenterLock() {
+    if (!hasInfiniteCarousel || !lobbyScroller || isAdjustingLoop) return;
+    if (centerLockTimer) clearTimeout(centerLockTimer);
+    centerLockTimer = setTimeout(() => {
+      const { index: nearestDisplay, distance } = getNearestDisplayInfo();
+      const activeDisplay = carouselIndex + 1;
+      // Ignore micro-drifts to prevent repeated jittering.
+      if (nearestDisplay === activeDisplay && distance < 6) return;
+      if (nearestDisplay === 0) {
+        isAdjustingLoop = true;
+        scrollToDisplayIndex(avatarChoices.length, 'auto');
+        carouselIndex = avatarChoices.length - 1;
+        requestAnimationFrame(() => {
+          isAdjustingLoop = false;
+        });
+        return;
+      }
+      if (nearestDisplay === avatarChoices.length + 1) {
+        isAdjustingLoop = true;
+        scrollToDisplayIndex(1, 'auto');
+        carouselIndex = 0;
+        requestAnimationFrame(() => {
+          isAdjustingLoop = false;
+        });
+        return;
+      }
+      isAdjustingLoop = true;
+      scrollToDisplayIndex(nearestDisplay, 'auto');
+      carouselIndex = displayToRealIndex(nearestDisplay);
+      requestAnimationFrame(() => {
+        isAdjustingLoop = false;
+      });
+    }, 120);
+  }
+
+  function displayToRealIndex(displayIndex: number): number {
+    if (!hasInfiniteCarousel) return Math.max(0, Math.min(displayIndex, avatarChoices.length - 1));
+    if (displayIndex === 0) return avatarChoices.length - 1;
+    if (displayIndex === avatarChoices.length + 1) return 0;
+    return displayIndex - 1;
+  }
+
+  function scrollCarousel(direction: -1 | 1) {
+    if (avatarChoices.length === 0) return;
+    const wrappedIndex =
+      direction > 0
+        ? (carouselIndex + 1) % avatarChoices.length
+        : (carouselIndex - 1 + avatarChoices.length) % avatarChoices.length;
+    scrollToCarouselIndex(wrappedIndex);
+  }
+
+  function handleCarouselScroll() {
+    if (!lobbyScroller || carouselCards.length === 0 || isAdjustingLoop) return;
+    const { index: nearestDisplay } = getNearestDisplayInfo();
+    carouselIndex = displayToRealIndex(nearestDisplay);
+
+    if (!hasInfiniteCarousel) return;
+    if (nearestDisplay === 0 || nearestDisplay === avatarChoices.length + 1) {
+      isAdjustingLoop = true;
+      const targetDisplay = nearestDisplay === 0 ? avatarChoices.length : 1;
+      requestAnimationFrame(() => {
+        scrollToDisplayIndex(targetDisplay, 'auto');
+        requestAnimationFrame(() => {
+          isAdjustingLoop = false;
+        });
+      });
+    }
+
+    scheduleCenterLock();
+  }
 </script>
 
 <div class="lobby-wrapper">
@@ -147,17 +293,23 @@
   <div class="error-message">{errorMessage}</div>
 {/if}
 
-<div class="lobby">
-  {#each Object.values(AvatarChoice).filter(c => c !== AvatarChoice.UNDEFINED) as avatarChoice}
+<div class="lobby-shell">
+<div class="lobby" bind:this={lobbyScroller} on:scroll={handleCarouselScroll}>
+  {#each carouselRenderChoices as avatarChoice, displayIdx}
+    {@const idx = displayToRealIndex(displayIdx)}
     {#if $localPlayer && $gameState}
       <div 
         class="player-card"
         class:clickable={!$gameState.players.some((p) => p.selectedAvatar === avatarChoice)}
         style="border-color: {getAvatarBorderColor($gameState.players, avatarChoice)}"
-        on:click={() => selectPlayerAvatar(avatarChoice)}
+        on:click={() => {
+          carouselIndex = idx;
+          selectPlayerAvatar(avatarChoice);
+        }}
         on:keydown={(e) => e.key === 'Enter' && selectPlayerAvatar(avatarChoice)}
         role="button"
         tabindex="0"
+        bind:this={carouselCards[displayIdx]}
       >
         <div class="player-name">{getPlayerName(avatarChoice)}</div>
         <div class="avatar-options">
@@ -189,13 +341,30 @@
     {/if}
   {/each}
 </div>
+{#if avatarChoices.length > 1}
+  <div class="carousel-controls" aria-label="Avatar carousel controls">
+    <button type="button" class="carousel-nav-btn" on:click={() => scrollCarousel(-1)} aria-label="Previous avatar">
+      ‹
+    </button>
+    <div class="carousel-dots">
+      {#each avatarChoices as _choice, idx}
+        <button
+          type="button"
+          class="carousel-dot"
+          class:active={carouselIndex === idx}
+          on:click={() => scrollToCarouselIndex(idx)}
+          aria-label={`Go to avatar ${idx + 1}`}
+        ></button>
+      {/each}
+    </div>
+    <button type="button" class="carousel-nav-btn" on:click={() => scrollCarousel(1)} aria-label="Next avatar">
+      ›
+    </button>
+  </div>
+{/if}
+</div>
 
 {#if $gameState}
-<div class="lobby-actions-row">
-  <button type="button" class="lobby-settings-btn" on:click={toggleSettings} aria-expanded={settingsOpen}>
-    ⚙ Lobby Settings
-  </button>
-</div>
 <button 
   on:click={startGame} 
   disabled={!canStartGame($gameState.players)}
@@ -203,12 +372,17 @@
 >
   {canStartGame($gameState.players) ? 'Start Game' : 'Need at least 2 players with selected avatars'}
 </button>
+<div class="lobby-actions-row">
+  <button type="button" class="lobby-settings-btn" on:click={toggleSettings} aria-expanded={settingsOpen}>
+    ⚙ Game Settings
+  </button>
+</div>
 {/if}
 {#if $gameState && settingsOpen}
   <div class="lobby-settings-overlay" role="dialog" aria-label="Lobby settings" aria-modal="true">
     <button type="button" class="lobby-settings-backdrop" on:click={closeSettings} aria-label="Close settings"></button>
     <div class="lobby-settings-panel">
-      <h3>Lobby Settings</h3>
+      <h3>Game Settings</h3>
       <div class="winning-score-picker">
         <div class="winning-score-label">👑 Target score: {localWinningScore}</div>
         <div class="winning-score-options">
@@ -326,124 +500,76 @@
   }
 
   .lobby {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(clamp(200px, 25vw, 280px), 1fr));
-    gap: clamp(1rem, 3vw, 2rem);
-    max-width: min(900px, 95vw);
+    display: flex;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    gap: clamp(0.7rem, 2vw, 1.05rem);
+    max-width: min(1100px, 96vw);
     width: 100%;
     margin: 0 auto;
     align-items: stretch;
-    padding: 0 clamp(0.5rem, 2vw, 1rem);
+    justify-content: flex-start;
+    padding: 0 clamp(0.85rem, 4vw, 2.6rem) 0.5rem;
+  }
+  .lobby::-webkit-scrollbar {
+    display: none;
+  }
+  .lobby-shell {
+    width: 100%;
+    max-width: min(1160px, 97vw);
+    margin: 0 auto;
+  }
+  .carousel-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.7rem;
+    margin-top: 0.65rem;
+  }
+  .carousel-nav-btn {
+    width: 2.1rem;
+    height: 2.1rem;
+    border-radius: 999px;
+    border: 1px solid rgba(96, 136, 177, 0.48);
+    background: linear-gradient(160deg, rgba(248, 252, 255, 0.95), rgba(231, 239, 247, 0.95));
+    color: #173b5a;
+    font-size: 1.2rem;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 8px 18px rgba(14, 42, 65, 0.16);
+  }
+  .carousel-dots {
+    display: flex;
+    gap: 0.32rem;
+  }
+  .carousel-dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 999px;
+    border: none;
+    background: rgba(34, 83, 126, 0.3);
+    cursor: pointer;
+    transition: transform 120ms ease, background 150ms ease;
+  }
+  .carousel-dot.active {
+    background: #2f7bef;
+    transform: scale(1.15);
   }
 
   @media (max-width: 768px) {
     .lobby {
-      grid-template-columns: repeat(2, 1fr);
+      padding: 0 0.4rem 0.55rem;
     }
   }
 
   @media (max-width: 480px) {
     .lobby {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  /* Landscape phone/tablet: fit all 6 avatars in one row with no scrolling */
-  @media (orientation: landscape) and (max-height: 600px) {
-    .lobby-wrapper {
-      height: 100dvh;
-      max-height: 100dvh;
-      overflow: hidden;
-      justify-content: flex-start;
-      padding: 0 0.6vw;
-    }
-    .app-header {
-      margin-top: 0.4vh;
-      margin-bottom: 0.3vh;
-      flex: 0 0 auto;
-    }
-    .app-logo {
-      max-width: min(22vw, 160px);
-      max-height: min(14vh, 70px);
-    }
-    .lobby {
-      grid-template-columns: repeat(6, minmax(0, 1fr));
-      gap: 0.6vw;
-      max-width: 100vw;
-      padding: 0 0.6vw;
-      flex: 1 1 auto;
-      min-height: 0;
-      align-items: center;
-    }
-    .player-card {
-      padding: 0.5vh 0.4vw;
-      border-radius: 8px;
-      border-width: 2px;
-      height: auto;
-    }
-    .player-name {
-      font-size: clamp(0.7rem, 2vh, 0.9rem);
-      margin-bottom: 0.4vh;
-    }
-    .avatar-options {
-      margin-bottom: 0.4vh;
-    }
-    .avatar-option {
-      width: clamp(40px, 11vh, 62px);
-      height: clamp(40px, 11vh, 62px);
-      border-width: 2px;
-    }
-    .option-avatar {
-      width: clamp(36px, 9.8vh, 54px);
-      height: clamp(36px, 9.8vh, 54px);
-    }
-    .player-status {
-      font-size: clamp(0.62rem, 1.7vh, 0.8rem);
-    }
-    .selection-indicator {
-      font-size: 0.55rem;
-      padding: 1px 4px;
-      bottom: -4px;
-    }
-    .start-button {
-      margin: 0.5vh auto;
-      padding: 0.7vh 1.6vw;
-      font-size: clamp(0.78rem, 2vh, 0.95rem);
-      min-height: 32px;
-      flex: 0 0 auto;
-    }
-    .error-message {
-      padding: 0.4rem 0.8rem;
-      font-size: 0.8rem;
-      margin: 0.4vh auto;
-    }
-  }
-
-  /* Very tight landscape (iPhone SE landscape = 667×375) */
-  @media (orientation: landscape) and (max-height: 420px) {
-    .app-logo {
-      max-width: min(18vw, 130px);
-      max-height: min(12vh, 54px);
-    }
-    .player-name {
-      font-size: clamp(0.62rem, 1.8vh, 0.78rem);
-      margin-bottom: 0.2vh;
-    }
-    .avatar-option {
-      width: clamp(34px, 12vh, 50px);
-      height: clamp(34px, 12vh, 50px);
-    }
-    .option-avatar {
-      width: clamp(30px, 10.5vh, 44px);
-      height: clamp(30px, 10.5vh, 44px);
-    }
-    .player-status {
-      font-size: clamp(0.55rem, 1.6vh, 0.72rem);
-    }
-    .start-button {
-      padding: 0.5vh 1.2vw;
-      font-size: clamp(0.7rem, 1.8vh, 0.85rem);
-      min-height: 28px;
+      gap: 0.65rem;
+      padding: 0 0.2rem 0.55rem;
     }
   }
   
@@ -451,6 +577,8 @@
     display: flex;
     flex-direction: column;
     align-items: center;
+    flex: 0 0 clamp(200px, 28vw, 260px);
+    scroll-snap-align: center;
     padding: clamp(1rem, 2.5vw, 1.5rem);
     border: clamp(2px, 0.5vw, 3px) solid #e0e0e0;
     border-radius: clamp(8px, 2vw, 10px);
@@ -678,5 +806,180 @@
   
   .avatar-option[style*="border-color: #ccc"] {
     border-color: #ccc !important;
+  }
+
+  :global(body.lobby-bg) {
+    background:
+      radial-gradient(circle at 18% 14%, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 36%),
+      radial-gradient(circle at 84% 82%, rgba(82, 160, 207, 0.2), rgba(82, 160, 207, 0) 42%),
+      linear-gradient(165deg, #dceef7 0%, #cfe4f0 48%, #c7dfec 100%) !important;
+  }
+
+  .lobby-wrapper {
+    padding: 0.4rem clamp(0.75rem, 2.2vw, 1.4rem) 1.6rem;
+    gap: 0.6rem;
+  }
+
+  .app-header {
+    margin-top: clamp(1rem, 2.4vh, 1.6rem);
+    margin-bottom: clamp(0.8rem, 2vh, 1.3rem);
+  }
+
+  .app-logo {
+    filter:
+      drop-shadow(0 8px 18px rgba(10, 44, 66, 0.25))
+      drop-shadow(0 2px 0 rgba(255, 255, 255, 0.3));
+  }
+
+  .error-message {
+    border-radius: 12px;
+    background: linear-gradient(165deg, rgba(220, 61, 82, 0.95), rgba(190, 38, 62, 0.95));
+    box-shadow: 0 10px 20px rgba(124, 29, 44, 0.25);
+    border: 1px solid rgba(255, 213, 219, 0.45);
+  }
+
+  .lobby {
+    gap: clamp(0.85rem, 2.2vw, 1.4rem);
+    max-width: min(960px, 95vw);
+    padding: 0;
+  }
+
+  .player-card {
+    border: 1px solid rgba(122, 160, 190, 0.42);
+    border-radius: 16px;
+    background:
+      radial-gradient(120% 100% at 10% -20%, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0) 58%),
+      linear-gradient(160deg, rgba(249, 252, 255, 0.93), rgba(236, 244, 250, 0.9));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.95),
+      0 14px 28px rgba(21, 63, 91, 0.16);
+    transition:
+      transform 170ms ease,
+      box-shadow 200ms ease,
+      border-color 180ms ease,
+      filter 180ms ease;
+  }
+
+  .player-card.clickable:hover {
+    transform: translateY(-4px);
+    border-color: rgba(76, 127, 170, 0.7);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.95),
+      0 18px 34px rgba(18, 55, 81, 0.24);
+    filter: saturate(1.06);
+  }
+
+  .player-card.clickable:focus {
+    outline: 2px solid rgba(62, 136, 217, 0.9);
+    outline-offset: 2px;
+  }
+
+  .player-name {
+    color: #173b5a;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+  }
+
+  .avatar-option {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(242, 248, 253, 0.95));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.9),
+      0 7px 14px rgba(16, 45, 70, 0.15);
+  }
+
+  .selection-indicator {
+    background: linear-gradient(165deg, rgba(16, 34, 54, 0.93), rgba(34, 63, 95, 0.93));
+    border: 1px solid rgba(168, 201, 232, 0.4);
+    box-shadow: 0 6px 12px rgba(9, 22, 36, 0.3);
+  }
+
+  .player-status {
+    font-weight: 600;
+  }
+
+  .lobby-actions-row {
+    margin-top: 0.9rem;
+    margin-bottom: 0.35rem;
+  }
+
+  .lobby-settings-btn {
+    border: 1px solid rgba(96, 136, 177, 0.45);
+    background:
+      radial-gradient(140% 150% at 20% 10%, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0) 60%),
+      linear-gradient(160deg, rgba(248, 252, 255, 0.92), rgba(229, 238, 248, 0.92));
+    color: #173b5a;
+    padding: 0.45rem 0.9rem;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.95),
+      0 9px 18px rgba(14, 42, 65, 0.14);
+    transition: transform 140ms ease, box-shadow 180ms ease, border-color 180ms ease;
+  }
+
+  .lobby-settings-btn:hover {
+    transform: translateY(-1px);
+    border-color: rgba(75, 121, 172, 0.62);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.95),
+      0 12px 22px rgba(14, 42, 65, 0.2);
+  }
+
+  .start-button {
+    margin-top: 0.45rem;
+    border-radius: 12px;
+    border: 1px solid rgba(122, 188, 237, 0.45);
+    background: linear-gradient(165deg, #2f7bef 0%, #245fcf 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.32),
+      0 12px 24px rgba(28, 83, 178, 0.28);
+    transition:
+      transform 140ms ease,
+      box-shadow 190ms ease,
+      filter 180ms ease;
+  }
+
+  .start-button:hover:not(:disabled) {
+    transform: translateY(-2px);
+    background: linear-gradient(165deg, #3585fd 0%, #2a66d8 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.35),
+      0 16px 30px rgba(27, 80, 170, 0.34);
+    filter: saturate(1.06);
+  }
+
+  .start-button:disabled {
+    background: linear-gradient(165deg, #b9c7d4 0%, #aab9c8 100%);
+    border-color: rgba(132, 154, 175, 0.5);
+    color: rgba(40, 58, 76, 0.78);
+    box-shadow: none;
+  }
+
+  .blocked-screen,
+  .lobby-settings-panel {
+    border-radius: 16px;
+    border: 1px solid rgba(121, 155, 191, 0.4);
+    background:
+      radial-gradient(120% 100% at 14% -20%, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0) 58%),
+      linear-gradient(160deg, rgba(248, 251, 255, 0.94), rgba(232, 240, 249, 0.92));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.92),
+      0 16px 36px rgba(16, 47, 73, 0.24);
+    backdrop-filter: blur(10px);
+  }
+
+  .lobby-settings-close,
+  .winning-score-btn,
+  .blocked-refresh-btn {
+    transition: transform 130ms ease, box-shadow 180ms ease, background 180ms ease, border-color 180ms ease;
+  }
+
+  .winning-score-btn.active {
+    background: linear-gradient(165deg, #2f7bef, #245fcf);
+    border-color: #245fcf;
+    box-shadow: 0 8px 16px rgba(28, 83, 178, 0.3);
+  }
+
+  .winning-score-btn:hover:not(.active) {
+    border-color: rgba(87, 132, 182, 0.55);
+    transform: translateY(-1px);
   }
 </style>
