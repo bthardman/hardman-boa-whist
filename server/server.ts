@@ -210,6 +210,25 @@ io.on('connection', (socket) => {
     io.to(roomId).emit('state_updated', room);
   });
 
+  socket.on('reset_lobby', ({ roomId }: { roomId: string }) => {
+    const room = roomManager.getRoom(roomId);
+    if (!room) return;
+    if (room.state !== 'lobby') return;
+    room.players.forEach((player) => {
+      player.selectedAvatar = AvatarChoice.UNDEFINED;
+      player.hand = [];
+      player.tricksWon = 0;
+      player.bid = undefined;
+    });
+    room.currentPlayer = 0;
+    room.firstPlayer = 0;
+    room.currentTrick = [];
+    room.winner = undefined;
+    room.roundNumber = 0;
+    room.scoreboard = {};
+    io.to(roomId).emit('state_updated', room);
+  });
+
   socket.on('set_game_speed', ({ roomId, gameSpeed }: { roomId: string; gameSpeed: 'slow' | 'normal' | 'fast' }) => {
     const room = roomManager.getRoom(roomId);
     if (!room) return;

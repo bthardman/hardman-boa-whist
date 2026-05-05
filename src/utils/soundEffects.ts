@@ -38,10 +38,16 @@ class SoundEffects {
 
   constructor() {
     if (typeof window === 'undefined') return;
-    const storedCards = Number(localStorage.getItem('cardsVolume'));
-    const storedJingles = Number(localStorage.getItem('jinglesVolume'));
-    if (Number.isFinite(storedCards)) this.cardsVolume = this.clampVolume(storedCards / 100);
-    if (Number.isFinite(storedJingles)) this.jinglesVolume = this.clampVolume(storedJingles / 100);
+    const storedCardsRaw = localStorage.getItem('cardsVolume');
+    const storedJinglesRaw = localStorage.getItem('jinglesVolume');
+    if (storedCardsRaw !== null) {
+      const storedCards = Number(storedCardsRaw);
+      if (Number.isFinite(storedCards)) this.cardsVolume = this.clampVolume(storedCards / 100);
+    }
+    if (storedJinglesRaw !== null) {
+      const storedJingles = Number(storedJinglesRaw);
+      if (Number.isFinite(storedJingles)) this.jinglesVolume = this.clampVolume(storedJingles / 100);
+    }
   }
 
   private clampVolume(v: number): number {

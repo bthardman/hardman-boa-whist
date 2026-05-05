@@ -163,10 +163,16 @@
 
   onMount(() => {
     document.body.classList.add('game-bg');
-    const storedCardsVolume = Number(localStorage.getItem('cardsVolume'));
-    const storedJinglesVolume = Number(localStorage.getItem('jinglesVolume'));
-    if (Number.isFinite(storedCardsVolume)) cardsVolume = Math.max(0, Math.min(100, Math.round(storedCardsVolume)));
-    if (Number.isFinite(storedJinglesVolume)) jinglesVolume = Math.max(0, Math.min(100, Math.round(storedJinglesVolume)));
+    const storedCardsVolumeRaw = localStorage.getItem('cardsVolume');
+    const storedJinglesVolumeRaw = localStorage.getItem('jinglesVolume');
+    if (storedCardsVolumeRaw !== null) {
+      const storedCardsVolume = Number(storedCardsVolumeRaw);
+      if (Number.isFinite(storedCardsVolume)) cardsVolume = Math.max(0, Math.min(100, Math.round(storedCardsVolume)));
+    }
+    if (storedJinglesVolumeRaw !== null) {
+      const storedJinglesVolume = Number(storedJinglesVolumeRaw);
+      if (Number.isFinite(storedJinglesVolume)) jinglesVolume = Math.max(0, Math.min(100, Math.round(storedJinglesVolume)));
+    }
     soundEffects.setCardsVolume(cardsVolume / 100);
     soundEffects.setJinglesVolume(jinglesVolume / 100);
     if ($gameState?.players) {
@@ -585,7 +591,7 @@
             </div>
           </div>
           <div class="ui-scale-group">
-            <div class="ui-scale-label">Cards Volume ({cardsVolume}%)</div>
+            <div class="ui-scale-label">FX ({cardsVolume}%)</div>
             <div class="volume-options">
               <input
                 type="range"
@@ -599,7 +605,7 @@
             </div>
           </div>
           <div class="ui-scale-group">
-            <div class="ui-scale-label">Jingles Volume ({jinglesVolume}%)</div>
+            <div class="ui-scale-label">Music ({jinglesVolume}%)</div>
             <div class="volume-options">
               <input
                 type="range"

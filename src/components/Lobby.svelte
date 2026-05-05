@@ -27,19 +27,68 @@
     return nameA.localeCompare(nameB);
   });
   let carouselIndex = 0;
+  let currentDisplayIndex = 0;
+  let suppressScrollSyncUntil = 0;
   let lobbyScroller: HTMLDivElement | null = null;
   let carouselCards: Array<HTMLDivElement | null> = [];
-  let isAdjustingLoop = false;
-  let centerLockTimer: ReturnType<typeof setTimeout> | null = null;
+  const infiniteRepeatCount = 11;
+  const preferredAvatarCookie = 'preferredAvatarChoice';
+  let restoredPreferredAvatar = false;
   $: hasInfiniteCarousel = avatarChoices.length > 1;
+  $: carouselCycleLength = avatarChoices.length;
   $: carouselRenderChoices = hasInfiniteCarousel
-    ? [avatarChoices[avatarChoices.length - 1], ...avatarChoices, avatarChoices[0]]
+    ? Array.from({ length: carouselCycleLength * infiniteRepeatCount }, (_, i) => avatarChoices[i % carouselCycleLength])
     : avatarChoices;
 
   $: localWinningScore = $gameState?.winningScore ?? 5;
   $: if ($localPlayer && $localPlayer.selectedAvatar !== AvatarChoice.UNDEFINED) {
     const selectedIndex = avatarChoices.findIndex((c) => c === $localPlayer?.selectedAvatar);
     if (selectedIndex >= 0) carouselIndex = selectedIndex;
+  }
+  $: if ($localPlayer && $gameState && !restoredPreferredAvatar) {
+    restoredPreferredAvatar = true;
+    const preferredAvatar = getPreferredAvatarFromCookie();
+    if (preferredAvatar && preferredAvatar !== AvatarChoice.UNDEFINED) {
+      const preferredIndex = avatarChoices.findIndex((choice) => choice === preferredAvatar);
+      if (preferredIndex >= 0) {
+        scrollToCarouselIndex(preferredIndex, 'auto');
+
+        const localSelectedAvatar = $localPlayer.selectedAvatar;
+        const isTakenByOtherPlayer = $gameState.players.some(
+          (player) => player.playerId !== $localPlayer!.playerId && player.selectedAvatar === preferredAvatar
+        );
+        if (localSelectedAvatar === AvatarChoice.UNDEFINED && !isTakenByOtherPlayer) {
+          socket.emit("select_avatar", {
+            roomId: $roomId,
+            playerId: $localPlayer.playerId,
+            avatarChoice: preferredAvatar
+          });
+        }
+      }
+    }
+  }
+
+  function setPreferredAvatarCookie(avatarChoice: AvatarChoice) {
+    if (typeof document === 'undefined') return;
+    const expiry = new Date();
+    expiry.setDate(expiry.getDate() + 365);
+    document.cookie = `${preferredAvatarCookie}=${encodeURIComponent(String(avatarChoice))}; expires=${expiry.toUTCString()}; path=/; SameSite=Lax`;
+  }
+
+  function getPreferredAvatarFromCookie(): AvatarChoice | null {
+    if (typeof document === 'undefined') return null;
+    const encodedName = `${preferredAvatarCookie}=`;
+    const parts = document.cookie.split(';');
+    for (const rawPart of parts) {
+      const part = rawPart.trim();
+      if (!part.startsWith(encodedName)) continue;
+      const decoded = decodeURIComponent(part.slice(encodedName.length));
+      const asNumber = Number(decoded);
+      if (!Number.isFinite(asNumber)) return null;
+      const avatar = asNumber as AvatarChoice;
+      return avatarChoices.includes(avatar) ? avatar : null;
+    }
+    return null;
   }
 
   function startGame() {
@@ -57,6 +106,12 @@
   }
 
   function closeSettings() {
+    settingsOpen = false;
+  }
+
+  function resetLobby() {
+    if (!$gameState || $gameState.state !== 'lobby') return;
+    socket.emit('reset_lobby', { roomId: $roomId });
     settingsOpen = false;
   }
 
@@ -84,7 +139,11 @@
     registerErrorHandler("join_error", handleJoinBlocked);
     void tick().then(() => {
       if (hasInfiniteCarousel) {
-        scrollToDisplayIndex(1, 'auto');
+        const initialDisplay = getMiddleDisplayIndex(carouselIndex);
+        requestAnimationFrame(() => {
+          scrollToDisplayIndex(initialDisplay, 'auto');
+          currentDisplayIndex = initialDisplay;
+        });
       }
     });
 
@@ -101,10 +160,6 @@
     unregisterErrorHandler("avatar_selection_error");
     unregisterErrorHandler("start_game_error");
     unregisterErrorHandler("join_error");
-    if (centerLockTimer) {
-      clearTimeout(centerLockTimer);
-      centerLockTimer = null;
-    }
     document.body.classList.remove('lobby-bg');
     document.documentElement.classList.remove('lobby-bg');
   });
@@ -136,6 +191,7 @@
       playerId: $localPlayer.playerId, 
       avatarChoice
     });
+    setPreferredAvatarCookie(avatarChoice);
     soundEffects.playAvatarSelect();
   }
 
@@ -172,10 +228,11 @@
     if (avatarChoices.length === 0) return;
     const wrapped = ((index % avatarChoices.length) + avatarChoices.length) % avatarChoices.length;
     carouselIndex = wrapped;
-    const displayIndex = hasInfiniteCarousel ? wrapped + 1 : wrapped;
+    const displayIndex = hasInfiniteCarousel ? getMiddleDisplayIndex(wrapped) : wrapped;
     const card = carouselCards[displayIndex];
     if (card) {
       card.scrollIntoView({ behavior, block: 'nearest', inline: 'center' });
+      currentDisplayIndex = displayIndex;
     }
   }
 
@@ -188,10 +245,10 @@
 
   function getNearestDisplayInfo(): { index: number; distance: number } {
     if (!lobbyScroller || carouselCards.length === 0) {
-      return { index: hasInfiniteCarousel ? carouselIndex + 1 : carouselIndex, distance: 0 };
+      return { index: hasInfiniteCarousel ? getMiddleDisplayIndex(carouselIndex) : carouselIndex, distance: 0 };
     }
     const scrollerCenter = lobbyScroller.scrollLeft + lobbyScroller.clientWidth / 2;
-    let nearestDisplay = hasInfiniteCarousel ? carouselIndex + 1 : carouselIndex;
+    let nearestDisplay = hasInfiniteCarousel ? getMiddleDisplayIndex(carouselIndex) : carouselIndex;
     let nearestDistance = Number.POSITIVE_INFINITY;
     carouselCards.forEach((card, idx) => {
       if (!card) return;
@@ -205,83 +262,62 @@
     return { index: nearestDisplay, distance: nearestDistance };
   }
 
-  function scheduleCenterLock() {
-    if (!hasInfiniteCarousel || !lobbyScroller || isAdjustingLoop) return;
-    if (centerLockTimer) clearTimeout(centerLockTimer);
-    centerLockTimer = setTimeout(() => {
-      const { index: nearestDisplay, distance } = getNearestDisplayInfo();
-      const activeDisplay = carouselIndex + 1;
-      // Ignore micro-drifts to prevent repeated jittering.
-      if (nearestDisplay === activeDisplay && distance < 6) return;
-      if (nearestDisplay === 0) {
-        isAdjustingLoop = true;
-        scrollToDisplayIndex(avatarChoices.length, 'auto');
-        carouselIndex = avatarChoices.length - 1;
-        requestAnimationFrame(() => {
-          isAdjustingLoop = false;
-        });
-        return;
-      }
-      if (nearestDisplay === avatarChoices.length + 1) {
-        isAdjustingLoop = true;
-        scrollToDisplayIndex(1, 'auto');
-        carouselIndex = 0;
-        requestAnimationFrame(() => {
-          isAdjustingLoop = false;
-        });
-        return;
-      }
-      isAdjustingLoop = true;
-      scrollToDisplayIndex(nearestDisplay, 'auto');
-      carouselIndex = displayToRealIndex(nearestDisplay);
-      requestAnimationFrame(() => {
-        isAdjustingLoop = false;
-      });
-    }, 120);
-  }
-
   function displayToRealIndex(displayIndex: number): number {
     if (!hasInfiniteCarousel) return Math.max(0, Math.min(displayIndex, avatarChoices.length - 1));
-    if (displayIndex === 0) return avatarChoices.length - 1;
-    if (displayIndex === avatarChoices.length + 1) return 0;
-    return displayIndex - 1;
+    const n = avatarChoices.length;
+    return ((displayIndex % n) + n) % n;
   }
 
   function scrollCarousel(direction: -1 | 1) {
-    if (avatarChoices.length === 0) return;
-    const wrappedIndex =
-      direction > 0
-        ? (carouselIndex + 1) % avatarChoices.length
-        : (carouselIndex - 1 + avatarChoices.length) % avatarChoices.length;
-    scrollToCarouselIndex(wrappedIndex);
+    if (avatarChoices.length === 0 || carouselCards.length === 0) return;
+    const nextDisplay = Math.max(0, Math.min(currentDisplayIndex + direction, carouselRenderChoices.length - 1));
+    suppressScrollSyncUntil = Date.now() + 240;
+    scrollToDisplayIndex(nextDisplay, 'auto');
+    const normalizedDisplay = normalizeDisplayIndex(nextDisplay);
+    if (normalizedDisplay !== nextDisplay) {
+      scrollToDisplayIndex(normalizedDisplay, 'auto');
+      currentDisplayIndex = normalizedDisplay;
+      carouselIndex = displayToRealIndex(normalizedDisplay);
+    } else {
+      currentDisplayIndex = nextDisplay;
+      carouselIndex = displayToRealIndex(nextDisplay);
+    }
   }
 
   function handleCarouselScroll() {
-    if (!lobbyScroller || carouselCards.length === 0 || isAdjustingLoop) return;
+    if (!lobbyScroller || carouselCards.length === 0) return;
+    if (Date.now() < suppressScrollSyncUntil) return;
     const { index: nearestDisplay } = getNearestDisplayInfo();
-    carouselIndex = displayToRealIndex(nearestDisplay);
-
-    if (!hasInfiniteCarousel) return;
-    if (nearestDisplay === 0 || nearestDisplay === avatarChoices.length + 1) {
-      isAdjustingLoop = true;
-      const targetDisplay = nearestDisplay === 0 ? avatarChoices.length : 1;
-      requestAnimationFrame(() => {
-        scrollToDisplayIndex(targetDisplay, 'auto');
-        requestAnimationFrame(() => {
-          isAdjustingLoop = false;
-        });
-      });
+    const normalizedDisplay = normalizeDisplayIndex(nearestDisplay);
+    if (normalizedDisplay !== nearestDisplay) {
+      scrollToDisplayIndex(normalizedDisplay, 'auto');
+      currentDisplayIndex = normalizedDisplay;
+      carouselIndex = displayToRealIndex(normalizedDisplay);
+    } else {
+      currentDisplayIndex = nearestDisplay;
+      carouselIndex = displayToRealIndex(nearestDisplay);
     }
+  }
 
-    scheduleCenterLock();
+  function getMiddleDisplayIndex(realIndex: number): number {
+    if (!hasInfiniteCarousel) return realIndex;
+    const middleCycle = Math.floor(infiniteRepeatCount / 2);
+    return middleCycle * carouselCycleLength + realIndex;
+  }
+
+  function normalizeDisplayIndex(displayIndex: number): number {
+    if (!hasInfiniteCarousel) return displayIndex;
+    const n = carouselCycleLength;
+    const total = carouselRenderChoices.length;
+    const minSafe = n;
+    const maxSafe = total - n - 1;
+    if (displayIndex >= minSafe && displayIndex <= maxSafe) return displayIndex;
+    const realIndex = displayToRealIndex(displayIndex);
+    return getMiddleDisplayIndex(realIndex);
   }
 </script>
 
 <div class="lobby-wrapper">
-<header class="app-header">
-    <img src="/logo/logo.png" alt="Game Logo" class="app-logo" />
-</header>
-
 {#if blockedMessage}
   <div class="blocked-screen" role="alert" aria-live="assertive">
     <h2>Unable to join this game</h2>
@@ -293,91 +329,88 @@
   <div class="error-message">{errorMessage}</div>
 {/if}
 
-<div class="lobby-shell">
-<div class="lobby" bind:this={lobbyScroller} on:scroll={handleCarouselScroll}>
-  {#each carouselRenderChoices as avatarChoice, displayIdx}
-    {@const idx = displayToRealIndex(displayIdx)}
-    {#if $localPlayer && $gameState}
-      <div 
-        class="player-card"
-        class:clickable={!$gameState.players.some((p) => p.selectedAvatar === avatarChoice)}
-        style="border-color: {getAvatarBorderColor($gameState.players, avatarChoice)}"
-        on:click={() => {
-          carouselIndex = idx;
-          selectPlayerAvatar(avatarChoice);
-        }}
-        on:keydown={(e) => e.key === 'Enter' && selectPlayerAvatar(avatarChoice)}
-        role="button"
-        tabindex="0"
-        bind:this={carouselCards[displayIdx]}
-      >
-        <div class="player-name">{getPlayerName(avatarChoice)}</div>
-        <div class="avatar-options">
-          <div
-            class="avatar-option"
-            style="border-color: {getAvatarBorderColor($gameState.players, avatarChoice)}"
-          >
-            <img src={getAvatarData(avatarChoice).avatar1} alt="{getPlayerName(avatarChoice)} Avatar" class="option-avatar" />
-            {#if getAvatarSelectionState($gameState.players, avatarChoice).isSelected}
-              <div class="selection-indicator">
-                {getAvatarSelectionState($gameState.players, avatarChoice).isSelectedByMe
-                  ? 'You'
-                  : 'Player ' + ($gameState.players.findIndex(p => p.selectedAvatar === avatarChoice) + 1)
-                }
-              </div>
-            {/if}
+<div class="lobby-main">
+  <header class="app-header">
+      <img src="/logo/logo.png" alt="Game Logo" class="app-logo" />
+  </header>
+  <div class="lobby-shell">
+  <div class="lobby" bind:this={lobbyScroller} on:scroll={handleCarouselScroll}>
+    {#each carouselRenderChoices as avatarChoice, displayIdx}
+      {@const idx = displayToRealIndex(displayIdx)}
+      {#if $localPlayer && $gameState}
+        <div 
+          class="player-card"
+          class:clickable={!$gameState.players.some((p) => p.selectedAvatar === avatarChoice)}
+          style="border-color: {getAvatarBorderColor($gameState.players, avatarChoice)}"
+          on:click={() => {
+            carouselIndex = idx;
+            suppressScrollSyncUntil = Date.now() + 220;
+            scrollToDisplayIndex(displayIdx);
+            currentDisplayIndex = displayIdx;
+            selectPlayerAvatar(avatarChoice);
+          }}
+          on:keydown={(e) => e.key === 'Enter' && selectPlayerAvatar(avatarChoice)}
+          role="button"
+          tabindex="0"
+          bind:this={carouselCards[displayIdx]}
+        >
+          <div class="player-name">{getPlayerName(avatarChoice)}</div>
+          <div class="avatar-options">
+            <div
+              class="avatar-option"
+              style="border-color: {getAvatarBorderColor($gameState.players, avatarChoice)}"
+            >
+              <img src={getAvatarData(avatarChoice).avatar1} alt="{getPlayerName(avatarChoice)} Avatar" class="option-avatar" />
+              {#if getAvatarSelectionState($gameState.players, avatarChoice).isSelected}
+                <div class="selection-indicator">
+                  {getAvatarSelectionState($gameState.players, avatarChoice).isSelectedByMe
+                    ? 'You'
+                    : 'Player ' + ($gameState.players.findIndex(p => p.selectedAvatar === avatarChoice) + 1)
+                  }
+                </div>
+              {/if}
+            </div>
+          </div>
+          <div class="player-status">
+              <span  style="color: {getReadyTextColor($gameState.players, avatarChoice)}">
+                {#if getAvatarSelectionState($gameState.players, avatarChoice).isSelected}
+                  Ready to play
+                {:else}
+                  Click to select
+                {/if}
+              </span>
           </div>
         </div>
-        <div class="player-status">
-            <span  style="color: {getReadyTextColor($gameState.players, avatarChoice)}">
-              {#if getAvatarSelectionState($gameState.players, avatarChoice).isSelected}
-                Ready to play
-              {:else}
-                Click to select
-              {/if}
-            </span>
-        </div>
-      </div>
-    {/if}
-  {/each}
-</div>
-{#if avatarChoices.length > 1}
-  <div class="carousel-controls" aria-label="Avatar carousel controls">
-    <button type="button" class="carousel-nav-btn" on:click={() => scrollCarousel(-1)} aria-label="Previous avatar">
-      ‹
-    </button>
-    <div class="carousel-dots">
-      {#each avatarChoices as _choice, idx}
-        <button
-          type="button"
-          class="carousel-dot"
-          class:active={carouselIndex === idx}
-          on:click={() => scrollToCarouselIndex(idx)}
-          aria-label={`Go to avatar ${idx + 1}`}
-        ></button>
-      {/each}
+      {/if}
+    {/each}
+  </div>
+  {#if avatarChoices.length > 1}
+    <div class="carousel-controls" aria-label="Avatar carousel controls">
+      <button type="button" class="carousel-nav-btn" on:click={() => scrollCarousel(-1)} aria-label="Previous avatar">
+        ‹
+      </button>
+      <button type="button" class="carousel-nav-btn" on:click={() => scrollCarousel(1)} aria-label="Next avatar">
+        ›
+      </button>
     </div>
-    <button type="button" class="carousel-nav-btn" on:click={() => scrollCarousel(1)} aria-label="Next avatar">
-      ›
+  {/if}
+  </div>
+
+  {#if $gameState}
+  <button 
+    on:click={startGame} 
+    disabled={!canStartGame($gameState.players)}
+    class="start-button"
+  >
+    {canStartGame($gameState.players) ? 'Start Game' : 'Need at least 2 players with selected avatars'}
+  </button>
+  <div class="lobby-actions-row">
+    <button type="button" class="lobby-settings-btn" on:click={toggleSettings} aria-expanded={settingsOpen}>
+      ⚙ Game Settings
     </button>
   </div>
-{/if}
+  {/if}
 </div>
-
-{#if $gameState}
-<button 
-  on:click={startGame} 
-  disabled={!canStartGame($gameState.players)}
-  class="start-button"
->
-  {canStartGame($gameState.players) ? 'Start Game' : 'Need at least 2 players with selected avatars'}
-</button>
-<div class="lobby-actions-row">
-  <button type="button" class="lobby-settings-btn" on:click={toggleSettings} aria-expanded={settingsOpen}>
-    ⚙ Game Settings
-  </button>
-</div>
-{/if}
 {#if $gameState && settingsOpen}
   <div class="lobby-settings-overlay" role="dialog" aria-label="Lobby settings" aria-modal="true">
     <button type="button" class="lobby-settings-backdrop" on:click={closeSettings} aria-label="Close settings"></button>
@@ -398,6 +431,7 @@
           {/each}
         </div>
       </div>
+      <button type="button" class="lobby-reset-btn" on:click={resetLobby}>Reset Lobby</button>
       <button type="button" class="lobby-settings-close" on:click={closeSettings}>Close</button>
     </div>
   </div>
@@ -458,7 +492,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: flex-start;
+    justify-content: center;
     min-height: 100dvh;
     width: 100%;
     box-sizing: border-box;
@@ -520,8 +554,18 @@
   }
   .lobby-shell {
     width: 100%;
-    max-width: min(1160px, 97vw);
+    max-width: min(1460px, 99vw);
     margin: 0 auto;
+  }
+  .lobby-main {
+    width: 100%;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
   }
   .carousel-controls {
     display: flex;
@@ -529,6 +573,8 @@
     justify-content: center;
     gap: 0.7rem;
     margin-top: 0.65rem;
+    position: relative;
+    z-index: 4;
   }
   .carousel-nav-btn {
     width: 2.1rem;
@@ -541,25 +587,8 @@
     line-height: 1;
     cursor: pointer;
     box-shadow: 0 8px 18px rgba(14, 42, 65, 0.16);
+    pointer-events: auto;
   }
-  .carousel-dots {
-    display: flex;
-    gap: 0.32rem;
-  }
-  .carousel-dot {
-    width: 0.5rem;
-    height: 0.5rem;
-    border-radius: 999px;
-    border: none;
-    background: rgba(34, 83, 126, 0.3);
-    cursor: pointer;
-    transition: transform 120ms ease, background 150ms ease;
-  }
-  .carousel-dot.active {
-    background: #2f7bef;
-    transform: scale(1.15);
-  }
-
   @media (max-width: 768px) {
     .lobby {
       padding: 0 0.4rem 0.55rem;
@@ -733,6 +762,24 @@
     font-weight: 700;
     cursor: pointer;
   }
+  .lobby-reset-btn {
+    margin-top: 0.4rem;
+    width: 100%;
+    border: 1px solid rgba(168, 69, 80, 0.42);
+    background: linear-gradient(165deg, rgba(241, 95, 113, 0.95), rgba(205, 56, 76, 0.95));
+    color: #fff;
+    border-radius: 8px;
+    padding: 0.52rem 0.7rem;
+    font-weight: 800;
+    cursor: pointer;
+    box-shadow: 0 10px 20px rgba(131, 39, 53, 0.2);
+    transition: transform 130ms ease, box-shadow 180ms ease, filter 180ms ease;
+  }
+  .lobby-reset-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 24px rgba(131, 39, 53, 0.28);
+    filter: saturate(1.06);
+  }
   .winning-score-picker {
     margin-top: 0.75rem;
     margin-bottom: 0.35rem;
@@ -821,8 +868,8 @@
   }
 
   .app-header {
-    margin-top: clamp(1rem, 2.4vh, 1.6rem);
-    margin-bottom: clamp(0.8rem, 2vh, 1.3rem);
+    margin-top: clamp(0.5rem, 1.6vh, 1rem);
+    margin-bottom: clamp(0.45rem, 1.4vh, 0.85rem);
   }
 
   .app-logo {
@@ -840,7 +887,7 @@
 
   .lobby {
     gap: clamp(0.85rem, 2.2vw, 1.4rem);
-    max-width: min(960px, 95vw);
+    max-width: min(1420px, 99vw);
     padding: 0;
   }
 
@@ -967,6 +1014,7 @@
   }
 
   .lobby-settings-close,
+  .lobby-reset-btn,
   .winning-score-btn,
   .blocked-refresh-btn {
     transition: transform 130ms ease, box-shadow 180ms ease, background 180ms ease, border-color 180ms ease;
