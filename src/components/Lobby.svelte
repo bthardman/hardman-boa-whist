@@ -11,6 +11,9 @@
   let errorMessage = '';
   let blockedMessage = '';
   let settingsOpen = false;
+  let cardsVolume = 100;
+  let jinglesVolume = 100;
+  let gameSpeed: 'slow' | 'normal' | 'fast' = 'normal';
   let localWinningScore = 5;
   const winningScoreOptions = [1, 2, 3, 4, 5];
   const preferredAvatarOrder = ['Tony', 'Rowan', 'Brad', 'Carol', 'Derek', 'Angela', 'Vanessa', 'Afroditi'];
@@ -29,16 +32,56 @@
   let carouselIndex = 0;
   let currentDisplayIndex = 0;
   let suppressScrollSyncUntil = 0;
+  let introStage: 'splash' | 'dock' | 'carousel' | 'done' = 'splash';
+  const introTimers: ReturnType<typeof setTimeout>[] = [];
+  let introFaceFrame: 1 | 2 = 1;
+  let introFaceTimer: ReturnType<typeof setInterval> | null = null;
+  let hasPlayedIntroSound = false;
   let lobbyScroller: HTMLDivElement | null = null;
   let carouselCards: Array<HTMLDivElement | null> = [];
   const infiniteRepeatCount = 11;
   const preferredAvatarCookie = 'preferredAvatarChoice';
+  const introOrbitSeeds = [
+    { x: -36, y: -22, path: 'a' }
+  ] as const;
+  let introOrbitBubbles: Array<{
+    avatarChoice: AvatarChoice;
+    burstTx: string;
+    burstTy: string;
+    burstTxAlt: string;
+    burstTyAlt: string;
+    duration: string;
+    delay: string;
+    size: string;
+  }> = [];
   let restoredPreferredAvatar = false;
   $: hasInfiniteCarousel = avatarChoices.length > 1;
+  $: introOrbitBubbles = avatarChoices.flatMap((avatarChoice, avatarIdx) => {
+    return introOrbitSeeds.map((_, copyIdx) => {
+      const seed = avatarIdx * 3 + copyIdx;
+      const angleDeg = (seed * 137.508) % 360;
+      const rad = (angleDeg * Math.PI) / 180;
+      const altRad = ((angleDeg + 180 + 12) * Math.PI) / 180;
+      const distVw = 58 + (seed % 6) * 1.6;
+      const distVh = 48 + (seed % 5) * 1.8;
+      const altDistVw = 50 + (seed % 6) * 1.2;
+      const altDistVh = 42 + (seed % 5) * 1.4;
+      const burstTx = `${(Math.cos(rad) * distVw).toFixed(2)}vw`;
+      const burstTy = `${(Math.sin(rad) * distVh).toFixed(2)}vh`;
+      const burstTxAlt = `${(Math.cos(altRad) * altDistVw).toFixed(2)}vw`;
+      const burstTyAlt = `${(Math.sin(altRad) * altDistVh).toFixed(2)}vh`;
+      const durationSec = 4.1 + (seed % 5) * 0.22;
+      const duration = `${durationSec.toFixed(2)}s`;
+      const delay = '0s';
+      const size = `${50 + (seed % 5) * 6}px`;
+      return { avatarChoice, burstTx, burstTy, burstTxAlt, burstTyAlt, duration, delay, size };
+    });
+  });
   $: carouselCycleLength = avatarChoices.length;
   $: carouselRenderChoices = hasInfiniteCarousel
     ? Array.from({ length: carouselCycleLength * infiniteRepeatCount }, (_, i) => avatarChoices[i % carouselCycleLength])
     : avatarChoices;
+  $: gameSpeed = $gameState?.gameSpeed === 'slow' || $gameState?.gameSpeed === 'fast' ? $gameState.gameSpeed : 'normal';
 
   $: localWinningScore = $gameState?.winningScore ?? 5;
   $: if ($localPlayer && $localPlayer.selectedAvatar !== AvatarChoice.UNDEFINED) {
@@ -92,6 +135,7 @@
   }
 
   function startGame() {
+    if (introStage !== 'done') return;
     soundEffects.playGameStart();
     socket.emit("start_game", { roomId: $roomId });
   }
@@ -101,7 +145,24 @@
     socket.emit('set_winning_score', { roomId: $roomId, winningScore: score });
   }
 
+  function setGameSpeed(speed: 'slow' | 'normal' | 'fast') {
+    socket.emit('set_game_speed', { roomId: $roomId, gameSpeed: speed });
+  }
+
+  function setCardsVolume(next: number) {
+    cardsVolume = Math.max(0, Math.min(100, next));
+    localStorage.setItem('cardsVolume', String(cardsVolume));
+    soundEffects.setCardsVolume(cardsVolume / 100);
+  }
+
+  function setJinglesVolume(next: number) {
+    jinglesVolume = Math.max(0, Math.min(100, next));
+    localStorage.setItem('jinglesVolume', String(jinglesVolume));
+    soundEffects.setJinglesVolume(jinglesVolume / 100);
+  }
+
   function toggleSettings() {
+    if (introStage !== 'done') return;
     settingsOpen = !settingsOpen;
   }
 
@@ -128,6 +189,48 @@
     window.location.reload();
   }
 
+  function runIntroSequence() {
+    introStage = 'splash';
+    if (!hasPlayedIntroSound) {
+      soundEffects.playGameStart();
+      hasPlayedIntroSound = true;
+    }
+    introTimers.push(
+      setTimeout(() => {
+        introStage = 'dock';
+      }, 3000)
+    );
+    introTimers.push(
+      setTimeout(() => {
+        introStage = 'carousel';
+        runCarouselIntroSpin();
+      }, 3800)
+    );
+    introTimers.push(
+      setTimeout(() => {
+        introStage = 'done';
+      }, 5000)
+    );
+  }
+
+  function runCarouselIntroSpin() {
+    if (!hasInfiniteCarousel || carouselCards.length === 0) return;
+    const finalDisplay = getMiddleDisplayIndex(carouselIndex);
+    const spinOffset = Math.max(avatarChoices.length * 2, 4);
+    const startDisplay = Math.min(carouselRenderChoices.length - 1, finalDisplay + spinOffset);
+    suppressScrollSyncUntil = Date.now() + 1600;
+    scrollToDisplayIndex(startDisplay, 'auto');
+    currentDisplayIndex = startDisplay;
+    carouselIndex = displayToRealIndex(startDisplay);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        scrollToDisplayIndex(finalDisplay, 'smooth');
+        currentDisplayIndex = finalDisplay;
+        carouselIndex = displayToRealIndex(finalDisplay);
+      });
+    });
+  }
+
   onMount(() => {
     // Set body class for background
     document.body.classList.add('lobby-bg');
@@ -137,6 +240,18 @@
     registerErrorHandler("avatar_selection_error", handleError);
     registerErrorHandler("start_game_error", handleError);
     registerErrorHandler("join_error", handleJoinBlocked);
+    const storedCardsVolumeRaw = localStorage.getItem('cardsVolume');
+    const storedJinglesVolumeRaw = localStorage.getItem('jinglesVolume');
+    if (storedCardsVolumeRaw !== null) {
+      const storedCardsVolume = Number(storedCardsVolumeRaw);
+      if (Number.isFinite(storedCardsVolume)) cardsVolume = Math.max(0, Math.min(100, Math.round(storedCardsVolume)));
+    }
+    if (storedJinglesVolumeRaw !== null) {
+      const storedJinglesVolume = Number(storedJinglesVolumeRaw);
+      if (Number.isFinite(storedJinglesVolume)) jinglesVolume = Math.max(0, Math.min(100, Math.round(storedJinglesVolume)));
+    }
+    soundEffects.setCardsVolume(cardsVolume / 100);
+    soundEffects.setJinglesVolume(jinglesVolume / 100);
     void tick().then(() => {
       if (hasInfiniteCarousel) {
         const initialDisplay = getMiddleDisplayIndex(carouselIndex);
@@ -145,6 +260,7 @@
           currentDisplayIndex = initialDisplay;
         });
       }
+      runIntroSequence();
     });
 
     return () => {
@@ -160,11 +276,29 @@
     unregisterErrorHandler("avatar_selection_error");
     unregisterErrorHandler("start_game_error");
     unregisterErrorHandler("join_error");
+    for (const timer of introTimers) clearTimeout(timer);
+    introTimers.length = 0;
+    if (introFaceTimer) {
+      clearInterval(introFaceTimer);
+      introFaceTimer = null;
+    }
     document.body.classList.remove('lobby-bg');
     document.documentElement.classList.remove('lobby-bg');
   });
 
+  $: {
+    if (introStage === 'splash' && !introFaceTimer) {
+      introFaceTimer = setInterval(() => {
+        introFaceFrame = introFaceFrame === 1 ? 2 : 1;
+      }, 820);
+    } else if (introStage !== 'splash' && introFaceTimer) {
+      clearInterval(introFaceTimer);
+      introFaceTimer = null;
+    }
+  }
+
   function selectPlayerAvatar(avatarChoice: AvatarChoice) {
+    if (introStage !== 'done') return;
     if (!$localPlayer || !$gameState) return;
 
     if ($localPlayer.selectedAvatar === avatarChoice) {
@@ -269,6 +403,7 @@
   }
 
   function scrollCarousel(direction: -1 | 1) {
+    if (introStage !== 'done') return;
     if (avatarChoices.length === 0 || carouselCards.length === 0) return;
     const nextDisplay = Math.max(0, Math.min(currentDisplayIndex + direction, carouselRenderChoices.length - 1));
     suppressScrollSyncUntil = Date.now() + 240;
@@ -329,11 +464,44 @@
   <div class="error-message">{errorMessage}</div>
 {/if}
 
-<div class="lobby-main">
+<div
+  class="lobby-main"
+  class:intro-splash={introStage === 'splash'}
+  class:intro-dock={introStage === 'dock'}
+  class:intro-carousel={introStage === 'carousel'}
+  class:intro-done={introStage === 'done'}
+>
+  {#if introStage === 'splash'}
+    <div class="intro-overlay" aria-hidden="true">
+      {#if introOrbitBubbles.length > 0}
+        <div class="intro-avatar-cloud">
+          {#each introOrbitBubbles as orbit}
+            {#each [0, 1] as burstWave}
+              <div
+                class="intro-orbit intro-burst"
+                style="--burst-tx: {burstWave === 0 ? orbit.burstTx : orbit.burstTxAlt}; --burst-ty: {burstWave === 0 ? orbit.burstTy : orbit.burstTyAlt}; --burst-duration: {orbit.duration}; --burst-delay: {orbit.delay}; --burst-extra-delay: {burstWave === 0 ? '0s' : '1s'}; --orbit-size: {orbit.size};"
+              >
+                <img
+                  src={introFaceFrame === 1 ? getAvatarData(orbit.avatarChoice).avatar1 : getAvatarData(orbit.avatarChoice).avatar2}
+                  alt=""
+                  class="intro-orbit-avatar"
+                />
+              </div>
+            {/each}
+          {/each}
+        </div>
+      {/if}
+      <img src="/logo/logo.png" alt="" class="intro-logo" />
+    </div>
+  {/if}
   <header class="app-header">
       <img src="/logo/logo.png" alt="Game Logo" class="app-logo" />
   </header>
-  <div class="lobby-shell">
+  <div
+    class="lobby-shell"
+    class:intro-shell-hidden={introStage === 'splash' || introStage === 'dock'}
+    class:intro-shell-enter={introStage === 'carousel' || introStage === 'done'}
+  >
     <div class="carousel-frame">
       <div class="lobby" bind:this={lobbyScroller} on:scroll={handleCarouselScroll}>
         {#each carouselRenderChoices as avatarChoice, displayIdx}
@@ -388,10 +556,22 @@
     </div>
   {#if avatarChoices.length > 1}
     <div class="carousel-controls" aria-label="Avatar carousel controls">
-      <button type="button" class="carousel-nav-btn" on:click={() => scrollCarousel(-1)} aria-label="Previous avatar">
+      <button
+        type="button"
+        class="carousel-nav-btn"
+        on:click={() => scrollCarousel(-1)}
+        aria-label="Previous avatar"
+        disabled={introStage !== 'done'}
+      >
         ‹
       </button>
-      <button type="button" class="carousel-nav-btn" on:click={() => scrollCarousel(1)} aria-label="Next avatar">
+      <button
+        type="button"
+        class="carousel-nav-btn"
+        on:click={() => scrollCarousel(1)}
+        aria-label="Next avatar"
+        disabled={introStage !== 'done'}
+      >
         ›
       </button>
     </div>
@@ -402,13 +582,19 @@
   <div class="lobby-bottom-actions">
     <button 
       on:click={startGame} 
-      disabled={!canStartGame($gameState.players)}
+      disabled={!canStartGame($gameState.players) || introStage !== 'done'}
       class="start-button"
     >
       {canStartGame($gameState.players) ? 'Start Game' : 'Need at least 2 players with selected avatars'}
     </button>
     <div class="lobby-actions-row">
-      <button type="button" class="lobby-settings-btn" on:click={toggleSettings} aria-expanded={settingsOpen}>
+      <button
+        type="button"
+        class="lobby-settings-btn"
+        on:click={toggleSettings}
+        aria-expanded={settingsOpen}
+        disabled={introStage !== 'done'}
+      >
         ⚙ Game Settings
       </button>
     </div>
@@ -435,6 +621,42 @@
           {/each}
         </div>
       </div>
+      <div class="lobby-settings-group">
+        <div class="lobby-settings-label">Game Speed</div>
+        <div class="lobby-settings-options">
+          <button type="button" class="lobby-settings-chip" class:active={gameSpeed === 'slow'} on:click={() => setGameSpeed('slow')}>Slow</button>
+          <button type="button" class="lobby-settings-chip" class:active={gameSpeed === 'normal'} on:click={() => setGameSpeed('normal')}>Normal</button>
+          <button type="button" class="lobby-settings-chip" class:active={gameSpeed === 'fast'} on:click={() => setGameSpeed('fast')}>Fast</button>
+        </div>
+      </div>
+      <div class="lobby-settings-group">
+        <div class="lobby-settings-label">FX ({cardsVolume}%)</div>
+        <div class="lobby-volume-options">
+          <input
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            bind:value={cardsVolume}
+            on:input={() => setCardsVolume(cardsVolume)}
+            aria-label="FX volume"
+          />
+        </div>
+      </div>
+      <div class="lobby-settings-group">
+        <div class="lobby-settings-label">Music ({jinglesVolume}%)</div>
+        <div class="lobby-volume-options">
+          <input
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            bind:value={jinglesVolume}
+            on:input={() => setJinglesVolume(jinglesVolume)}
+            aria-label="Music volume"
+          />
+        </div>
+      </div>
       <button type="button" class="lobby-reset-btn" on:click={resetLobby}>Reset Lobby</button>
       <button type="button" class="lobby-settings-close" on:click={closeSettings}>Close</button>
     </div>
@@ -453,6 +675,7 @@
     margin-bottom: 1.5rem;
     z-index: 10;
     position: relative;
+    transition: transform 0.55s ease, opacity 0.55s ease;
   }
   .app-logo {
     max-width: clamp(220px, 40vw, 340px);
@@ -470,7 +693,6 @@
     overflow-y: auto !important;
     overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
-    background: #E6F5FA !important;
     transition: background 0.3s;
   }
   :global(html.lobby-bg) {
@@ -569,6 +791,106 @@
     align-items: center;
     justify-items: center;
     gap: clamp(0.5rem, 1.5vh, 0.9rem);
+    position: relative;
+    overflow: hidden;
+  }
+  .lobby-main.intro-splash {
+    overflow: visible;
+  }
+  .intro-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    z-index: 30;
+    pointer-events: none;
+  }
+  .intro-avatar-cloud {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    overflow: visible;
+  }
+  .intro-orbit {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: var(--orbit-size);
+    height: var(--orbit-size);
+    margin-left: calc(var(--orbit-size) * -0.5);
+    margin-top: calc(var(--orbit-size) * -0.5);
+    opacity: 0.8;
+    will-change: transform;
+  }
+  .intro-burst {
+    animation: introBurstFly var(--burst-duration) cubic-bezier(0.06, 0.82, 0.17, 1) infinite;
+    animation-delay: calc(var(--burst-delay) + var(--burst-extra-delay));
+  }
+  .intro-orbit-avatar {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid rgba(255, 255, 255, 0.7);
+    box-shadow: 0 10px 20px rgba(11, 37, 59, 0.24);
+  }
+  .intro-logo {
+    width: clamp(180px, 32vw, 320px);
+    height: auto;
+    opacity: 1;
+    filter: drop-shadow(0 14px 28px rgba(13, 54, 86, 0.28));
+    animation: introLogoGrow 3s cubic-bezier(0.17, 0.9, 0.32, 1) forwards;
+    z-index: 2;
+  }
+  .lobby-main.intro-splash .app-header {
+    opacity: 0;
+    transform: translateY(50px) scale(0.86);
+  }
+  .lobby-main.intro-dock .app-header,
+  .lobby-main.intro-carousel .app-header,
+  .lobby-main.intro-done .app-header {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  .lobby-shell.intro-shell-hidden,
+  .lobby-main.intro-splash .lobby-bottom-actions {
+    opacity: 0;
+    transform: translateY(24px) scale(0.985);
+    pointer-events: none;
+  }
+  .lobby-shell.intro-shell-enter,
+  .lobby-main.intro-carousel .lobby-bottom-actions,
+  .lobby-main.intro-done .lobby-bottom-actions {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    transition: transform 0.6s ease, opacity 0.6s ease;
+  }
+  @keyframes introLogoGrow {
+    0% {
+      transform: scale(0.22);
+    }
+    64% {
+      transform: scale(2.25);
+    }
+    100% {
+      transform: scale(1);
+    }
+  }
+  @keyframes introBurstFly {
+    0% {
+      transform: translate(0, 0) scale(0.35);
+      opacity: 0;
+    }
+    5% {
+      opacity: 1;
+      transform: translate(0, 0) scale(0.95);
+    }
+    100% {
+      transform: translate(var(--burst-tx), var(--burst-ty)) scale(1);
+      opacity: 0.82;
+    }
   }
   .lobby-bottom-actions {
     grid-row: 3;
@@ -849,6 +1171,49 @@
     background: #004c8c;
     color: #fff;
     border-color: #004c8c;
+  }
+  .lobby-settings-group {
+    margin-top: 0.55rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.34rem;
+  }
+  .lobby-settings-label {
+    font-size: clamp(0.8rem, 2.1vw, 0.95rem);
+    font-weight: 700;
+    color: #2f3f51;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .lobby-settings-options {
+    display: inline-flex;
+    gap: 0.35rem;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .lobby-settings-chip {
+    min-width: 3.2rem;
+    border: 1px solid rgba(44, 62, 80, 0.22);
+    border-radius: 999px;
+    background: #fff;
+    color: #2c3e50;
+    padding: 0.28rem 0.62rem;
+    font-size: 0.84rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .lobby-settings-chip.active {
+    background: #004c8c;
+    color: #fff;
+    border-color: #004c8c;
+  }
+  .lobby-volume-options {
+    width: min(94%, 320px);
+  }
+  .lobby-volume-options input[type='range'] {
+    width: 100%;
+    accent-color: #0077ff;
   }
   
   .start-button:hover:not(:disabled) {
