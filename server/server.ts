@@ -187,6 +187,16 @@ io.on('connection', (socket) => {
       return;
     }
 
+    const clearingAvatar =
+      avatarChoice === AvatarChoice.UNDEFINED || avatarChoice === undefined || avatarChoice === null;
+
+    // Deselect — always allowed; bypass "taken" check (otherwise multiple UNDEFINED collide).
+    if (clearingAvatar) {
+      player.selectedAvatar = AvatarChoice.UNDEFINED;
+      io.to(roomId).emit('state_updated', room);
+      return;
+    }
+
     // Check if avatar is already taken
     if (roomManager.isAvatarTaken(room, avatarChoice, playerId)) {
       socket.emit('avatar_selection_error', { message: 'Avatar already selected by another player' });

@@ -12,6 +12,13 @@
   import { startAvatarSwap, stopAllAvatarSwaps } from '../utils/avatarManager';
   import { cardValue } from '../utils/gameUtils';
   import { soundEffects } from '../utils/soundEffects';
+  import {
+    persistCardsVolumePct,
+    persistJinglesVolumePct,
+    persistScreenTurnFlash,
+    readScreenTurnFlashEnabled,
+    readVolumePrefs
+  } from '../utils/playerPrefsCookies';
 
   let winnerMessage: string | null = null;
   let showWinner = false;
@@ -50,6 +57,25 @@
   let previousLocalHandSize = 0;
   let previousIsBiddingLocal = false;
   let previousIsLocalTurnToPlay = false;
+  let screenTurnFlashKey = 0;
+  let screenTurnFlashTimer: ReturnType<typeof setTimeout> | null = null;
+  let screenTurnFlashEnabled =
+    typeof document !== 'undefined' ? readScreenTurnFlashEnabled() : true;
+
+  function triggerScreenTurnFlash() {
+    if (!screenTurnFlashEnabled) return;
+    const ms = scaleMs(1000);
+    if (screenTurnFlashTimer) {
+      clearTimeout(screenTurnFlashTimer);
+      screenTurnFlashTimer = null;
+    }
+    screenTurnFlashKey += 1;
+    const k = screenTurnFlashKey;
+    screenTurnFlashTimer = setTimeout(() => {
+      if (screenTurnFlashKey === k) screenTurnFlashKey = 0;
+      screenTurnFlashTimer = null;
+    }, ms);
+  }
 
   $: isBiddingLocal =
     $gameState?.state === 'bidding' &&
@@ -163,16 +189,10 @@
 
   onMount(() => {
     document.body.classList.add('game-bg');
-    const storedCardsVolumeRaw = localStorage.getItem('cardsVolume');
-    const storedJinglesVolumeRaw = localStorage.getItem('jinglesVolume');
-    if (storedCardsVolumeRaw !== null) {
-      const storedCardsVolume = Number(storedCardsVolumeRaw);
-      if (Number.isFinite(storedCardsVolume)) cardsVolume = Math.max(0, Math.min(100, Math.round(storedCardsVolume)));
-    }
-    if (storedJinglesVolumeRaw !== null) {
-      const storedJinglesVolume = Number(storedJinglesVolumeRaw);
-      if (Number.isFinite(storedJinglesVolume)) jinglesVolume = Math.max(0, Math.min(100, Math.round(storedJinglesVolume)));
-    }
+    const volumes = readVolumePrefs();
+    cardsVolume = volumes.cardsVolume;
+    jinglesVolume = volumes.jinglesVolume;
+    screenTurnFlashEnabled = readScreenTurnFlashEnabled();
     soundEffects.setCardsVolume(cardsVolume / 100);
     soundEffects.setJinglesVolume(jinglesVolume / 100);
     if ($gameState?.players) {
@@ -200,6 +220,10 @@
     if (bidAnnouncementTimer) {
       clearTimeout(bidAnnouncementTimer);
       bidAnnouncementTimer = null;
+    }
+    if (screenTurnFlashTimer) {
+      clearTimeout(screenTurnFlashTimer);
+      screenTurnFlashTimer = null;
     }
     stopAllAvatarSwaps();
     document.body.classList.remove('game-bg');
@@ -241,6 +265,7 @@
   $: {
     if (isLocalTurnToPlay && !previousIsLocalTurnToPlay) {
       soundEffects.playYourGo();
+      triggerScreenTurnFlash();
     }
     previousIsLocalTurnToPlay = isLocalTurnToPlay;
   }
@@ -268,14 +293,19 @@
 
   function setCardsVolume(next: number) {
     cardsVolume = Math.max(0, Math.min(100, next));
-    localStorage.setItem('cardsVolume', String(cardsVolume));
+    persistCardsVolumePct(cardsVolume);
     soundEffects.setCardsVolume(cardsVolume / 100);
   }
 
   function setJinglesVolume(next: number) {
     jinglesVolume = Math.max(0, Math.min(100, next));
-    localStorage.setItem('jinglesVolume', String(jinglesVolume));
+    persistJinglesVolumePct(jinglesVolume);
     soundEffects.setJinglesVolume(jinglesVolume / 100);
+  }
+
+  function setScreenTurnFlashEnabled(on: boolean) {
+    screenTurnFlashEnabled = on;
+    persistScreenTurnFlash(on);
   }
 
   $: if ($gameState?.state === 'tricks') {
@@ -382,6 +412,7 @@
     }
     if (!previousIsBiddingLocal && isBiddingLocal) {
       soundEffects.playBidDisplay();
+      triggerScreenTurnFlash();
     }
     if (
       previousState === 'tricks' &&
@@ -529,6 +560,15 @@
     class:modal-bidding={isBiddingLocal}
     class:bidding-phase={isBiddingPhase}
   >
+    {#key screenTurnFlashKey}
+      {#if screenTurnFlashKey > 0}
+        <div
+          class="turn-screen-edge-glow"
+          style="--turn-glow-duration: {scaleMs(1000)}ms"
+          aria-hidden="true"
+        ></div>
+      {/if}
+    {/key}
     <!-- Fixed top bar: always present. Settings stays available in all phases. -->
     <header class="top-bar top-bar-fixed" class:centered={isBiddingPhase}>
       <div class="action-announcer" class:your-turn={isLocalTurn} role="status" aria-live="polite">
@@ -617,6 +657,17 @@
                 aria-label="Jingles volume"
               />
             </div>
+          </div>
+          <div class="ui-scale-group">
+            <label class="pref-checkbox-label">
+              <input
+                type="checkbox"
+                checked={screenTurnFlashEnabled}
+                on:change={(e) => setScreenTurnFlashEnabled(e.currentTarget.checked)}
+                aria-label="Gold screen edge when it is your turn"
+              />
+              <span>Screen flash on your turn</span>
+            </label>
           </div>
           <button type="button" class="settings-end-game-btn" on:click={cancelGame}>End Game</button>
           <button type="button" class="settings-close-btn" on:click={closeSettings}>Close</button>
@@ -866,6 +917,49 @@
     transition: background 0.3s;
   }
 
+  .turn-screen-edge-glow {
+    position: fixed;
+    inset: 0;
+    z-index: 150;
+    pointer-events: none;
+    opacity: 0;
+    box-shadow: none;
+    animation: turn-screen-edge-glow-anim var(--turn-glow-duration, 1000ms) ease-out forwards;
+  }
+  @keyframes turn-screen-edge-glow-anim {
+    0% {
+      opacity: 0;
+      box-shadow:
+        inset 0 0 0 0 transparent,
+        inset 0 0 0 transparent;
+    }
+    10% {
+      opacity: 1;
+      box-shadow:
+        inset 0 0 0 clamp(3px, 0.65vw, 7px) rgba(255, 216, 79, 0.98),
+        inset 0 0 clamp(20px, 5vw, 42px) rgba(255, 236, 160, 0.32);
+    }
+    62% {
+      opacity: 1;
+      box-shadow:
+        inset 0 0 0 clamp(2px, 0.5vw, 5px) rgba(255, 216, 79, 0.5),
+        inset 0 0 clamp(12px, 3vw, 24px) rgba(255, 236, 160, 0.14);
+    }
+    100% {
+      opacity: 0;
+      box-shadow:
+        inset 0 0 0 0 transparent,
+        inset 0 0 0 transparent;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .turn-screen-edge-glow {
+      animation: none;
+      opacity: 0;
+    }
+  }
+
   .gameboard {
     --top-bar-height: calc(3rem + env(safe-area-inset-top, 0));
     position: relative;
@@ -1092,6 +1186,22 @@
     width: 100%;
     accent-color: #004c8c;
     cursor: pointer;
+  }
+  .pref-checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.88rem;
+    color: #2c3e50;
+    cursor: pointer;
+    user-select: none;
+  }
+  .pref-checkbox-label input {
+    width: 1rem;
+    height: 1rem;
+    accent-color: #004c8c;
+    cursor: pointer;
+    flex-shrink: 0;
   }
   .ui-scale-btn {
     flex: 1;
@@ -1459,7 +1569,8 @@
     align-items: stretch;
     justify-content: center;
     gap: clamp(0.25rem, 0.8vh, 0.55rem);
-    width: 100%;
+    width: min(100%, clamp(300px, 78vw, 760px));
+    align-self: center;
     max-width: 100vw;
     padding: 0.25rem 0.35rem max(1rem, 3vh);
     box-sizing: border-box;

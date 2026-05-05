@@ -79,6 +79,7 @@ export class RoomManager {
   }
 
   isAvatarTaken(room: GameState, avatarChoice: AvatarChoice, excludePlayerId: string): boolean {
+    if (avatarChoice === AvatarChoice.UNDEFINED) return false;
     return room.players.some(
       p => p.playerId !== excludePlayerId && p.selectedAvatar === avatarChoice
     );

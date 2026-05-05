@@ -16,6 +16,7 @@ import avatarSelectSfx from '../assets/sounds/avatar-select.wav';
 import roundHandStartSfx from '../assets/sounds/round-hand-start.wav';
 import gameStartSfx from '../assets/sounds/game-start.wav';
 import yourGoSfx from '../assets/sounds/your-go.wav';
+import { readVolumePrefs } from './playerPrefsCookies';
 
 class SoundEffects {
   private enabled = true;
@@ -38,16 +39,9 @@ class SoundEffects {
 
   constructor() {
     if (typeof window === 'undefined') return;
-    const storedCardsRaw = localStorage.getItem('cardsVolume');
-    const storedJinglesRaw = localStorage.getItem('jinglesVolume');
-    if (storedCardsRaw !== null) {
-      const storedCards = Number(storedCardsRaw);
-      if (Number.isFinite(storedCards)) this.cardsVolume = this.clampVolume(storedCards / 100);
-    }
-    if (storedJinglesRaw !== null) {
-      const storedJingles = Number(storedJinglesRaw);
-      if (Number.isFinite(storedJingles)) this.jinglesVolume = this.clampVolume(storedJingles / 100);
-    }
+    const { cardsVolume: c, jinglesVolume: j } = readVolumePrefs();
+    this.cardsVolume = this.clampVolume(c / 100);
+    this.jinglesVolume = this.clampVolume(j / 100);
   }
 
   private clampVolume(v: number): number {
@@ -69,8 +63,8 @@ class SoundEffects {
   }
 
   private playClip(kind: 'win' | 'lose' | 'win_trick' | 'lose_trick' | 'game_end' | 'bid_display' | 'bid_received' | 'your_turn' | 'button' | 'avatar_select' | 'round_hand_start' | 'game_start' | 'your_go'): void {
-    if (!this.enabled) return;
     if (typeof window === 'undefined') return;
+    if (!this.enabled) return;
     const target =
       kind === 'win'
         ? 'handWinAudio'
@@ -131,13 +125,13 @@ class SoundEffects {
     clip.volume = this.getChannelVolume(kind);
     clip.currentTime = 0;
     void clip.play().catch(() => {
-      // Ignore autoplay/user-gesture errors; game continues without sound.
+      /* Autoplay / decode / load errors — no retry; game continues without sound */
     });
   }
 
   private playRandomCardClip(): void {
-    if (!this.enabled) return;
     if (typeof window === 'undefined') return;
+    if (!this.enabled) return;
     if (this.cardAudios.length === 0) {
       const cardSources = [
         dealingCards1Sfx,

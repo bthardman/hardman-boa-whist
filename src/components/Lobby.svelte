@@ -7,12 +7,21 @@
   import { getAvatarData, getPlayerName } from '../avatarData';
   import { registerErrorHandler, unregisterErrorHandler } from '../utils/socketHandlers';
   import { soundEffects } from '../utils/soundEffects';
+  import {
+    persistCardsVolumePct,
+    persistJinglesVolumePct,
+    persistScreenTurnFlash,
+    readScreenTurnFlashEnabled,
+    readVolumePrefs
+  } from '../utils/playerPrefsCookies';
 
   let errorMessage = '';
   let blockedMessage = '';
   let settingsOpen = false;
   let cardsVolume = 100;
   let jinglesVolume = 100;
+  let screenTurnFlashEnabled =
+    typeof document !== 'undefined' ? readScreenTurnFlashEnabled() : true;
   let gameSpeed: 'slow' | 'normal' | 'fast' = 'normal';
   let localWinningScore = 5;
   const winningScoreOptions = [1, 2, 3, 4, 5];
@@ -151,14 +160,19 @@
 
   function setCardsVolume(next: number) {
     cardsVolume = Math.max(0, Math.min(100, next));
-    localStorage.setItem('cardsVolume', String(cardsVolume));
+    persistCardsVolumePct(cardsVolume);
     soundEffects.setCardsVolume(cardsVolume / 100);
   }
 
   function setJinglesVolume(next: number) {
     jinglesVolume = Math.max(0, Math.min(100, next));
-    localStorage.setItem('jinglesVolume', String(jinglesVolume));
+    persistJinglesVolumePct(jinglesVolume);
     soundEffects.setJinglesVolume(jinglesVolume / 100);
+  }
+
+  function setScreenTurnFlashEnabled(on: boolean) {
+    screenTurnFlashEnabled = on;
+    persistScreenTurnFlash(on);
   }
 
   function toggleSettings() {
@@ -240,16 +254,10 @@
     registerErrorHandler("avatar_selection_error", handleError);
     registerErrorHandler("start_game_error", handleError);
     registerErrorHandler("join_error", handleJoinBlocked);
-    const storedCardsVolumeRaw = localStorage.getItem('cardsVolume');
-    const storedJinglesVolumeRaw = localStorage.getItem('jinglesVolume');
-    if (storedCardsVolumeRaw !== null) {
-      const storedCardsVolume = Number(storedCardsVolumeRaw);
-      if (Number.isFinite(storedCardsVolume)) cardsVolume = Math.max(0, Math.min(100, Math.round(storedCardsVolume)));
-    }
-    if (storedJinglesVolumeRaw !== null) {
-      const storedJinglesVolume = Number(storedJinglesVolumeRaw);
-      if (Number.isFinite(storedJinglesVolume)) jinglesVolume = Math.max(0, Math.min(100, Math.round(storedJinglesVolume)));
-    }
+    const volumes = readVolumePrefs();
+    cardsVolume = volumes.cardsVolume;
+    jinglesVolume = volumes.jinglesVolume;
+    screenTurnFlashEnabled = readScreenTurnFlashEnabled();
     soundEffects.setCardsVolume(cardsVolume / 100);
     soundEffects.setJinglesVolume(jinglesVolume / 100);
     void tick().then(() => {
@@ -301,7 +309,7 @@
     if (introStage !== 'done') return;
     if (!$localPlayer || !$gameState) return;
 
-    if ($localPlayer.selectedAvatar === avatarChoice) {
+    if (getAvatarSelectionState($gameState.players, avatarChoice).isSelectedByMe) {
       socket.emit("select_avatar", {
         roomId: $roomId,
         playerId: $localPlayer.playerId,
@@ -311,7 +319,10 @@
     }
 
     const isTaken = $gameState.players.some(
-      p => p.playerId !== $localPlayer.playerId && p.selectedAvatar === avatarChoice
+      (p) =>
+        p.playerId !== $localPlayer!.playerId &&
+        p.selectedAvatar !== AvatarChoice.UNDEFINED &&
+        p.selectedAvatar === avatarChoice
     );
 
     if (isTaken) {
@@ -460,9 +471,6 @@
     <button type="button" class="blocked-refresh-btn" on:click={refreshPage}>Back to lobby</button>
   </div>
 {:else}
-{#if errorMessage}
-  <div class="error-message">{errorMessage}</div>
-{/if}
 
 <div
   class="lobby-main"
@@ -497,6 +505,9 @@
   <header class="app-header">
       <img src="/logo/logo.png" alt="Game Logo" class="app-logo" />
   </header>
+  {#if errorMessage}
+    <div class="lobby-avatar-error-bubble" role="alert" aria-live="polite">{errorMessage}</div>
+  {/if}
   <div
     class="lobby-shell"
     class:intro-shell-hidden={introStage === 'splash' || introStage === 'dock'}
@@ -509,7 +520,10 @@
           {#if $localPlayer && $gameState}
             <div 
               class="player-card"
-              class:clickable={!$gameState.players.some((p) => p.selectedAvatar === avatarChoice)}
+              class:clickable={$localPlayer &&
+                !$gameState.players.some(
+                  (p) => p.playerId !== $localPlayer.playerId && p.selectedAvatar === avatarChoice
+                )}
               style="border-color: {getAvatarBorderColor($gameState.players, avatarChoice)}"
               on:click={() => {
                 carouselIndex = idx;
@@ -657,6 +671,17 @@
           />
         </div>
       </div>
+      <div class="lobby-settings-group lobby-settings-checkbox-row">
+        <label class="lobby-pref-checkbox">
+          <input
+            type="checkbox"
+            checked={screenTurnFlashEnabled}
+            on:change={(e) => setScreenTurnFlashEnabled(e.currentTarget.checked)}
+            aria-label="Gold screen edge during the game when it is your turn"
+          />
+          <span>Screen flash on your turn</span>
+        </label>
+      </div>
       <button type="button" class="lobby-reset-btn" on:click={resetLobby}>Reset Lobby</button>
       <button type="button" class="lobby-settings-close" on:click={closeSettings}>Close</button>
     </div>
@@ -762,7 +787,7 @@
   .lobby {
     display: flex;
     overflow-x: auto;
-    overflow-y: hidden;
+    overflow-y: visible;
     scroll-snap-type: x mandatory;
     overscroll-behavior-x: contain;
     scrollbar-width: none;
@@ -773,7 +798,9 @@
     margin: 0 auto;
     align-items: stretch;
     justify-content: flex-start;
-    padding: 0 clamp(0.85rem, 4vw, 2.6rem) 0.5rem;
+    background: transparent;
+    /* Room for hover lift + border/outline so tiles aren’t clipped */
+    padding: clamp(0.75rem, 2.5vh, 1.25rem) clamp(0.85rem, 4vw, 2.6rem);
   }
   .lobby::-webkit-scrollbar {
     display: none;
@@ -782,6 +809,8 @@
     width: 100%;
     max-width: min(1460px, 99vw);
     margin: 0 auto;
+    overflow: visible;
+    background: transparent;
   }
   .lobby-main {
     width: 100%;
@@ -792,7 +821,8 @@
     justify-items: center;
     gap: clamp(0.5rem, 1.5vh, 0.9rem);
     position: relative;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: visible;
   }
   .lobby-main.intro-splash {
     overflow: visible;
@@ -898,29 +928,52 @@
     justify-self: center;
     width: min(96vw, 560px);
   }
+  /* Avatar selection errors: fixed layer between logo + carousel, no layout shift */
+  .lobby-avatar-error-bubble {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    top: clamp(8.5rem, 24vh, 14.5rem);
+    z-index: 200;
+    pointer-events: none;
+    width: max-content;
+    max-width: min(92vw, 420px);
+    margin: 0;
+    padding: clamp(0.55rem, 1.4vw, 0.72rem) clamp(1rem, 3vw, 1.25rem);
+    border-radius: 12px;
+    text-align: center;
+    font-weight: 700;
+    font-size: clamp(0.86rem, 2.2vw, 0.98rem);
+    line-height: 1.35;
+    color: #fff;
+    background: linear-gradient(165deg, rgba(220, 61, 82, 0.97), rgba(190, 38, 62, 0.97));
+    box-shadow: 0 10px 26px rgba(124, 29, 44, 0.32);
+    border: 1px solid rgba(255, 213, 219, 0.48);
+  }
+
   .carousel-frame {
+    --carousel-fade-w: clamp(48px, 9vw, 130px);
     position: relative;
-    min-height: clamp(152px, 24vh, 210px);
+    min-height: clamp(168px, 26vh, 228px);
     display: flex;
     align-items: center;
+    overflow: visible;
+    padding-block: clamp(0.25rem, 1vh, 0.5rem);
+    background: transparent;
   }
-  .carousel-frame::before,
-  .carousel-frame::after {
+  /* Left + right scroll fades — colors track body.lobby-bg so there’s no “box” seam */
+  .carousel-frame::before {
     content: '';
     position: absolute;
-    top: 0;
-    bottom: 0;
-    width: clamp(48px, 9vw, 130px);
+    inset: 0;
     z-index: 3;
     pointer-events: none;
-  }
-  .carousel-frame::before {
-    left: 0;
-    background: linear-gradient(90deg, rgba(205, 224, 236, 0.98) 0%, rgba(205, 224, 236, 0.9) 34%, rgba(205, 224, 236, 0) 100%);
-  }
-  .carousel-frame::after {
-    right: 0;
-    background: linear-gradient(270deg, rgba(205, 224, 236, 0.98) 0%, rgba(205, 224, 236, 0.9) 34%, rgba(205, 224, 236, 0) 100%);
+    background:
+      linear-gradient(90deg, rgba(220, 238, 247, 0.88) 0%, rgba(207, 228, 240, 0.45) 38%, transparent 100%),
+      linear-gradient(270deg, rgba(220, 238, 247, 0.88) 0%, rgba(207, 228, 240, 0.45) 38%, transparent 100%);
+    background-size: var(--carousel-fade-w) 100%, var(--carousel-fade-w) 100%;
+    background-position: left center, right center;
+    background-repeat: no-repeat;
   }
   .carousel-controls {
     display: flex;
@@ -946,14 +999,14 @@
   }
   @media (max-width: 768px) {
     .lobby {
-      padding: 0 0.4rem 0.55rem;
+      padding: clamp(0.65rem, 2.2vh, 1rem) 0.4rem;
     }
   }
 
   @media (max-width: 480px) {
     .lobby {
       gap: 0.65rem;
-      padding: 0 0.2rem 0.55rem;
+      padding: clamp(0.6rem, 2vh, 0.95rem) 0.2rem;
     }
   }
   
@@ -1106,6 +1159,28 @@
     margin: 0 0 0.45rem;
     color: #1f2f44;
   }
+  .lobby-settings-checkbox-row {
+    text-align: left;
+    margin-top: 0.15rem;
+  }
+  .lobby-pref-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: #2c3e50;
+    cursor: pointer;
+    user-select: none;
+    justify-content: flex-start;
+  }
+  .lobby-pref-checkbox input {
+    width: 1rem;
+    height: 1rem;
+    accent-color: #004c8c;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
   .lobby-settings-close {
     margin-top: 0.45rem;
     width: 100%;
@@ -1225,19 +1300,6 @@
     cursor: not-allowed;
   }
   
-  .error-message {
-    background-color: #f44336;
-    color: white;
-    padding: clamp(0.75rem, 2vw, 1rem);
-    margin: clamp(0.75rem, 2vh, 1rem) clamp(0.5rem, 2vw, 1rem);
-    border-radius: clamp(4px, 1vw, 5px);
-    text-align: center;
-    font-size: clamp(0.9rem, 2.5vw, 1rem);
-    max-width: 95vw;
-    margin-left: auto;
-    margin-right: auto;
-  }
-  
   /* Color coding for avatar borders */
   .avatar-option[style*="border-color: #4CAF50"] {
     border-color: #4CAF50 !important;
@@ -1276,17 +1338,11 @@
       drop-shadow(0 2px 0 rgba(255, 255, 255, 0.3));
   }
 
-  .error-message {
-    border-radius: 12px;
-    background: linear-gradient(165deg, rgba(220, 61, 82, 0.95), rgba(190, 38, 62, 0.95));
-    box-shadow: 0 10px 20px rgba(124, 29, 44, 0.25);
-    border: 1px solid rgba(255, 213, 219, 0.45);
-  }
-
   .lobby {
     gap: clamp(0.85rem, 2.2vw, 1.4rem);
     max-width: min(1420px, 99vw);
-    padding: 0;
+    padding-inline: 0;
+    padding-block: clamp(0.8rem, 2.5vh, 1.15rem);
   }
   .app-header {
     grid-row: 1;
@@ -1446,11 +1502,8 @@
       gap: 0.55rem;
     }
     .carousel-frame {
-      min-height: clamp(148px, 22vh, 190px);
-    }
-    .carousel-frame::before,
-    .carousel-frame::after {
-      width: 44px;
+      --carousel-fade-w: 44px;
+      min-height: clamp(164px, 24vh, 210px);
     }
     .lobby-bottom-actions {
       width: min(96vw, 440px);
