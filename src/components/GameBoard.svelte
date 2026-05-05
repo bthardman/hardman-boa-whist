@@ -1679,9 +1679,9 @@
     max-width: calc(100vw - 1.2rem);
   }
   .local-hand {
-    --hand-half: clamp(26px, 5.5vw, 42px);
-    --hand-spread: clamp(34px, 6.1vw, 50px);
-    --hand-rotate: 14deg;
+    --hand-half: clamp(30px, 6vw, 46px);
+    --hand-spread: clamp(34px, 5.4vw, 46px);
+    --hand-rotate: 11deg;
     --hand-base-y: -8px;
   }
   .local-inline-stats {
@@ -1709,6 +1709,10 @@
   }
   .fanned-card.follow-suit-front {
     filter: saturate(1.08) brightness(1.02);
+  }
+  .local-player-panel :global(.card) {
+    width: clamp(56px, 11.8vw, 76px);
+    height: clamp(84px, 17.8vw, 114px);
   }
   @media (hover: none) {
     .fanned-card:active {
@@ -1957,12 +1961,6 @@
       max-width: calc(100vw - 1.1rem);
       height: clamp(84px, 16vh, 110px);
     }
-    .local-hand {
-      --hand-half: 24px;
-      --hand-spread: 28px;
-      --hand-rotate: 12deg;
-      --hand-base-y: -4px;
-    }
     .played-card {
       width: clamp(48px, 10vw, 68px);
       height: clamp(72px, 14vw, 100px);
@@ -1971,10 +1969,6 @@
       bottom: clamp(-30px, -1.8vh, -10px);
       max-width: min(84vw, 280px);
       font-size: clamp(0.72rem, 2.4vw, 0.86rem);
-    }
-    .local-player-panel :global(.card) {
-      width: 52px;
-      height: 78px;
     }
   }
 
@@ -1993,14 +1987,6 @@
       min-width: 0;
       max-width: calc(100vw - 1.2rem);
       height: clamp(78px, 14vh, 98px);
-    }
-    .local-hand {
-      --hand-half: 24px;
-      --hand-spread: 27px;
-    }
-    .local-player-panel :global(.card) {
-      width: 58px;
-      height: 86px;
     }
     .opponents {
       height: clamp(80px, 24%, 140px);

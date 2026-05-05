@@ -238,10 +238,11 @@
   }
   .bidding-hand-stage {
     position: relative;
-    width: 100%;
+    width: min(100%, clamp(300px, 78vw, 760px));
+    align-self: center;
     margin-right: 0px;
     border-radius: 14px;
-    padding: 0.45rem 0.1rem 0.35rem;
+    padding: clamp(0.42rem, 1.2vh, 0.6rem) 0.1rem clamp(0.28rem, 0.9vh, 0.45rem);
     background:
       radial-gradient(90% 95% at 50% 75%, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.03) 72%),
       linear-gradient(180deg, rgba(8, 42, 26, 0.28), rgba(6, 28, 18, 0.18));
@@ -305,17 +306,17 @@
     display: block;
     position: relative;
     flex: 0 0 auto;
-    min-width: clamp(220px, 58vw, 320px);
-    max-width: calc(100vw - 1.2rem);
-    height: clamp(96px, 20vh, 130px);
+    min-width: clamp(220px, 58vw, 360px);
+    max-width: 100%;
+    height: clamp(96px, 17vw, 150px);
     width: 100%;
     margin: 0 auto;
     pointer-events: auto;
   }
   .local-hand {
-    --hand-half: clamp(28px, 6vw, 44px);
-    --hand-spread: clamp(36px, 6.5vw, 54px);
-    --hand-rotate: 14deg;
+    --hand-half: clamp(30px, 6vw, 46px);
+    --hand-spread: clamp(34px, 5.4vw, 46px);
+    --hand-rotate: 11deg;
     --hand-base-y: -8px;
   }
   .fanned-card {
@@ -329,6 +330,10 @@
     justify-content: center;
     overflow: visible;
     touch-action: manipulation;
+  }
+  .bidding-player-row :global(.card) {
+    width: clamp(56px, 11.8vw, 76px);
+    height: clamp(84px, 17.8vw, 114px);
   }
   .fanned-card:hover {
     z-index: 100;
@@ -367,14 +372,8 @@
     }
     .hand-fanned {
       min-width: 0;
-      max-width: calc(100vw - 1.1rem);
-      height: clamp(84px, 16vh, 110px);
-    }
-    .local-hand {
-      --hand-half: 26px;
-      --hand-spread: 30px;
-      --hand-rotate: 12deg;
-      --hand-base-y: -4px;
+      max-width: 100%;
+      height: clamp(92px, 18vw, 138px);
     }
     .bidding-top-meta .local-avatar {
       width: clamp(46px, 10vw, 66px);
@@ -382,10 +381,6 @@
     }
     .bidding-top-meta .local-name {
       font-size: 0.88rem;
-    }
-    .bidding-player-row :global(.card) {
-      width: 52px;
-      height: 78px;
     }
   }
 
@@ -401,19 +396,13 @@
     }
     .hand-fanned {
       min-width: 0;
-      max-width: calc(100vw - 1.2rem);
-      height: clamp(78px, 14vh, 98px);
+      max-width: 100%;
+      height: clamp(88px, 20vw, 132px);
     }
     .bidding-hand-stage {
       width: 100%;
       margin-right: 0;
       padding-right: 0.0rem;
-    }
-    .local-hand {
-      --hand-half: 26px;
-      --hand-spread: 30px;
-      --hand-rotate: 10deg;
-      --hand-base-y: -3px;
     }
     .bidding-top-meta .local-avatar {
       width: 42px;
@@ -425,10 +414,6 @@
     .bidding-top-meta .local-name {
       font-size: 0.8rem;
       margin-bottom: 0.15rem;
-    }
-    .bidding-player-row :global(.card) {
-      width: 60px;
-      height: 90px;
     }
   }
 
@@ -456,13 +441,7 @@
     }
     .hand-fanned {
       min-width: clamp(170px, 56vw, 240px);
-      height: clamp(74px, 22vh, 96px);
-    }
-    .local-hand {
-      --hand-half: 20px;
-      --hand-spread: 16px;
-      --hand-rotate: 10deg;
-      --hand-base-y: -3px;
+      height: clamp(80px, 16vw, 118px);
     }
   }
   @keyframes turnPulseRing {
