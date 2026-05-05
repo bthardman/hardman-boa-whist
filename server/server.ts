@@ -386,19 +386,20 @@ io.on('connection', (socket) => {
     let nextIdx = (playerIndex + 1) % room.players.length;
     let allBidded = true;
     for (let i = 0; i < room.players.length; i++) {
-      if (typeof room.players[i].bid !== 'number') {
-        allBidded = false;
-        nextIdx = i;
-        break;
-      }
-    }
+  const checkIdx = (playerIndex + 1 + i) % room.players.length;
+  if (typeof room.players[checkIdx].bid !== 'number') {
+    allBidded = false;
+    nextIdx = checkIdx;
+    break;
+  }
+}
 
-    if (allBidded) {
-      GameStateMachine.transition(room, 'tricks');
-      room.currentPlayer = room.firstPlayer;
-    } else {
-      room.currentPlayer = nextIdx;
-    }
+if (allBidded) {
+  GameStateMachine.transition(room, 'tricks');
+  room.currentPlayer = room.firstPlayer;
+} else {
+  room.currentPlayer = nextIdx;
+}
 
     io.to(roomId).emit('state_updated', room);
   });
