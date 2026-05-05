@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy, tick } from 'svelte';
+  import { onMount, onDestroy, tick, afterUpdate } from 'svelte';
   import { gameState, roomId, localPlayer } from '../store';
   import type { Player } from '../../shared/types';
   import { AvatarChoice } from '../../shared/types';
@@ -41,8 +41,15 @@
   let carouselIndex = 0;
   let currentDisplayIndex = 0;
   let suppressScrollSyncUntil = 0;
-  let introStage: 'splash' | 'dock' | 'carousel' | 'done' = 'splash';
+  let introStage: 'pending' | 'pending_shrink' | 'splash' | 'dock' | 'carousel' | 'done' =
+    'pending';
   const introTimers: ReturnType<typeof setTimeout>[] = [];
+  let pendingShrinkFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Safety net if animationend doesn’t fire; ~one frame longer than CSS shrink + fill. */
+  const PENDING_SHRINK_MS = 240;
+  let tapHintIdleTimer: ReturnType<typeof setTimeout> | null = null;
+  let showPendingTapHint = false;
+  const TAP_LOGO_HINT_IDLE_MS = 5000;
   let introFaceFrame: 1 | 2 = 1;
   let introFaceTimer: ReturnType<typeof setInterval> | null = null;
   let hasPlayedIntroSound = false;
@@ -203,6 +210,41 @@
     window.location.reload();
   }
 
+  function finishPendingShrinkIntoSplash() {
+    if (introStage !== 'pending_shrink') return;
+    if (pendingShrinkFallbackTimer) {
+      clearTimeout(pendingShrinkFallbackTimer);
+      pendingShrinkFallbackTimer = null;
+    }
+    for (const t of introTimers) clearTimeout(t);
+    introTimers.length = 0;
+    runIntroSequence();
+  }
+
+  function beginLobbyIntro() {
+    if (introStage !== 'pending') return;
+    clearTapLogoHintTimer();
+    showPendingTapHint = false;
+    soundEffects.playGameStart();
+    hasPlayedIntroSound = true;
+    if (pendingShrinkFallbackTimer) {
+      clearTimeout(pendingShrinkFallbackTimer);
+      pendingShrinkFallbackTimer = null;
+    }
+    introStage = 'pending_shrink';
+    const shrinkSafetyMs =
+      typeof window !== 'undefined' &&
+      window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        ? 60
+        : PENDING_SHRINK_MS;
+    pendingShrinkFallbackTimer = setTimeout(finishPendingShrinkIntoSplash, shrinkSafetyMs);
+  }
+
+  function onPendingLogoShrinkDone(_e: AnimationEvent) {
+    finishPendingShrinkIntoSplash();
+  }
+
   function runIntroSequence() {
     introStage = 'splash';
     if (!hasPlayedIntroSound) {
@@ -268,10 +310,14 @@
           currentDisplayIndex = initialDisplay;
         });
       }
-      runIntroSequence();
     });
 
     return () => {
+      clearTapLogoHintTimer();
+      if (pendingShrinkFallbackTimer) {
+        clearTimeout(pendingShrinkFallbackTimer);
+        pendingShrinkFallbackTimer = null;
+      }
       unregisterErrorHandler("avatar_selection_error");
       unregisterErrorHandler("start_game_error");
       unregisterErrorHandler("join_error");
@@ -284,6 +330,11 @@
     unregisterErrorHandler("avatar_selection_error");
     unregisterErrorHandler("start_game_error");
     unregisterErrorHandler("join_error");
+    clearTapLogoHintTimer();
+    if (pendingShrinkFallbackTimer) {
+      clearTimeout(pendingShrinkFallbackTimer);
+      pendingShrinkFallbackTimer = null;
+    }
     for (const timer of introTimers) clearTimeout(timer);
     introTimers.length = 0;
     if (introFaceTimer) {
@@ -302,6 +353,30 @@
     } else if (introStage !== 'splash' && introFaceTimer) {
       clearInterval(introFaceTimer);
       introFaceTimer = null;
+    }
+  }
+
+  /** Schedules idle hint without reactive deps on `tapHintIdleTimer` (avoids re-run wiping the hint when the timer resolves). */
+  let lastIntroStageForTapHint: typeof introStage | null = null;
+  afterUpdate(() => {
+    if (lastIntroStageForTapHint === introStage) return;
+    lastIntroStageForTapHint = introStage;
+    if (tapHintIdleTimer !== null) {
+      clearTimeout(tapHintIdleTimer);
+      tapHintIdleTimer = null;
+    }
+    showPendingTapHint = false;
+    if (introStage === 'pending') {
+      tapHintIdleTimer = setTimeout(() => {
+        showPendingTapHint = true;
+      }, TAP_LOGO_HINT_IDLE_MS);
+    }
+  });
+
+  function clearTapLogoHintTimer(): void {
+    if (tapHintIdleTimer !== null) {
+      clearTimeout(tapHintIdleTimer);
+      tapHintIdleTimer = null;
     }
   }
 
@@ -474,11 +549,36 @@
 
 <div
   class="lobby-main"
+  class:intro-pending={introStage === 'pending' || introStage === 'pending_shrink'}
   class:intro-splash={introStage === 'splash'}
   class:intro-dock={introStage === 'dock'}
   class:intro-carousel={introStage === 'carousel'}
   class:intro-done={introStage === 'done'}
 >
+  {#if introStage === 'pending' || introStage === 'pending_shrink'}
+    <div class="intro-overlay intro-pending-layer">
+      <button
+        type="button"
+        class="intro-pending-hit"
+        disabled={introStage === 'pending_shrink'}
+        on:click={beginLobbyIntro}
+        aria-label="Start — tap the logo to play the opening sound and animation"
+      >
+        <img
+          src="/logo/logo.png"
+          alt=""
+          class="intro-pending-logo"
+          class:intro-pending-logo-shrink={introStage === 'pending_shrink'}
+          on:animationend={onPendingLogoShrinkDone}
+        />
+        <div class="intro-pending-hint-row" aria-live="polite">
+          {#if introStage === 'pending' && showPendingTapHint}
+            <span class="intro-pending-hint">Tap logo to start</span>
+          {/if}
+        </div>
+      </button>
+    </div>
+  {/if}
   {#if introStage === 'splash'}
     <div class="intro-overlay" aria-hidden="true">
       {#if introOrbitBubbles.length > 0}
@@ -502,7 +602,13 @@
       <img src="/logo/logo.png" alt="" class="intro-logo" />
     </div>
   {/if}
-  <header class="app-header">
+  <header
+    class="app-header"
+    aria-hidden={introStage === 'pending' ||
+      introStage === 'pending_shrink' ||
+      introStage === 'splash' ||
+      introStage === 'dock'}
+  >
       <img src="/logo/logo.png" alt="Game Logo" class="app-logo" />
   </header>
   {#if errorMessage}
@@ -510,7 +616,10 @@
   {/if}
   <div
     class="lobby-shell"
-    class:intro-shell-hidden={introStage === 'splash' || introStage === 'dock'}
+    class:intro-shell-hidden={introStage === 'pending' ||
+      introStage === 'pending_shrink' ||
+      introStage === 'splash' ||
+      introStage === 'dock'}
     class:intro-shell-enter={introStage === 'carousel' || introStage === 'done'}
   >
     <div class="carousel-frame">
@@ -824,8 +933,87 @@
     overflow-x: hidden;
     overflow-y: visible;
   }
-  .lobby-main.intro-splash {
+  .lobby-main.intro-splash,
+  .lobby-main.intro-pending {
     overflow: visible;
+  }
+  .intro-pending-layer {
+    pointer-events: none;
+  }
+  .intro-pending-hit {
+    --intro-pending-hint-gap: 0.55rem;
+    --intro-pending-hint-row-h: clamp(2.15rem, 5.5vw, 2.85rem);
+    pointer-events: auto;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    z-index: 2;
+    /* Centre the logo on the viewport: default flex-centre aligns the midpoint of logo+hint; nudge down by (hint row + gap)/2 so the logo’s centre lands on middle. */
+    translate: -50%
+      calc(-50% + (var(--intro-pending-hint-row-h) + var(--intro-pending-hint-gap)) / 2);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--intro-pending-hint-gap);
+    margin: 0;
+    padding: 0.5rem 1rem;
+    border: none;
+    background: transparent;
+    font: inherit;
+    cursor: pointer;
+    border-radius: 12px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .intro-pending-hit:focus {
+    outline: none;
+  }
+  .intro-pending-hit:focus-visible {
+    outline: 3px solid rgba(0, 76, 140, 0.55);
+    outline-offset: 6px;
+  }
+  .intro-pending-hit:disabled {
+    cursor: default;
+  }
+  /* Dedicated class — do not reuse .intro-logo (it forces the 3s introLogoGrow animation). */
+  .intro-pending-logo {
+    width: auto;
+    height: auto;
+    max-width: clamp(220px, 40vw, 340px);
+    max-height: clamp(220px, 34vh, 320px);
+    object-fit: contain;
+    transform: scale(1);
+    transform-origin: center center;
+    filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.1));
+  }
+  .intro-pending-logo.intro-pending-logo-shrink {
+    animation: introLogoShrinkIntoIntro 0.16s cubic-bezier(0.32, 0, 0.2, 1) forwards;
+  }
+  .intro-pending-hint-row {
+    min-height: var(--intro-pending-hint-row-h);
+    width: min(92vw, 22rem);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+  .intro-pending-hint {
+    font-size: clamp(0.78rem, 2vw, 0.95rem);
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: rgba(23, 59, 90, 0.72);
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.85);
+    user-select: none;
+    line-height: 1.3;
+  }
+  .lobby-main.intro-pending .app-header {
+    opacity: 0;
+    transform: translateY(50px) scale(0.86);
+  }
+  .lobby-main.intro-pending .lobby-bottom-actions {
+    opacity: 0;
+    transform: translateY(24px) scale(0.985);
+    pointer-events: none;
   }
   .intro-overlay {
     position: absolute;
@@ -897,9 +1085,17 @@
     transform: translateY(0) scale(1);
     transition: transform 0.6s ease, opacity 0.6s ease;
   }
+  @keyframes introLogoShrinkIntoIntro {
+    from {
+      transform: scale(1);
+    }
+    to {
+      transform: scale(0.4);
+    }
+  }
   @keyframes introLogoGrow {
     0% {
-      transform: scale(0.22);
+      transform: scale(0.4);
     }
     64% {
       transform: scale(2.25);
@@ -908,6 +1104,12 @@
       transform: scale(1);
     }
   }
+  @media (prefers-reduced-motion: reduce) {
+    .intro-pending-logo.intro-pending-logo-shrink {
+      animation-duration: 0.01ms;
+    }
+  }
+
   @keyframes introBurstFly {
     0% {
       transform: translate(0, 0) scale(0.35);
