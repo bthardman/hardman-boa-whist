@@ -1,16 +1,18 @@
 {
+  "extends": "@tsconfig/svelte/tsconfig.json",
   "compilerOptions": {
     "target": "ES2020",
     "module": "ESNext",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "strict": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
-    "types": ["svelte"]
+    "types": ["svelte", "vite/client", "node"]
   },
-  "extends": "@tsconfig/svelte/tsconfig.json",
   "include": ["src/**/*", "src/**/*.svelte", "server/**/*.ts", "shared/**/*.ts"],
-  "exclude": ["node_modules/*", "__sapper__/*", "public/*"]
+  "exclude": ["node_modules/*", "public/*", "dist/*"]
 }

@@ -1,6 +1,7 @@
 const COOKIE_CARDS = 'boa_whist_cardsVolume';
 const COOKIE_JINGLES = 'boa_whist_jinglesVolume';
 const COOKIE_SCREEN_FLASH = 'boa_whist_screenTurnFlash';
+const COOKIE_TEXT_SIZE = 'boa_whist_textSize';
 
 /** Legacy keys — migrated into cookies on read. */
 const LS_CARDS = 'cardsVolume';
@@ -86,4 +87,16 @@ export function readScreenTurnFlashEnabled(): boolean {
 
 export function persistScreenTurnFlash(enabled: boolean): void {
   setClientCookie(COOKIE_SCREEN_FLASH, enabled ? '1' : '0');
+}
+
+export type TextSize = 'standard' | 'large' | 'largest';
+
+/** Reading size for this device (defaults to standard). */
+export function readTextSize(): TextSize {
+  const raw = getClientCookie(COOKIE_TEXT_SIZE);
+  return raw === 'large' || raw === 'largest' ? raw : 'standard';
+}
+
+export function persistTextSize(size: TextSize): void {
+  setClientCookie(COOKIE_TEXT_SIZE, size);
 }

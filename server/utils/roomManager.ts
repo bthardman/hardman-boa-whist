@@ -24,7 +24,8 @@ export class RoomManager {
       scoreboard: {},
       roundNumber: 0,
       winningScore: 5,
-      gameSpeed: 'normal'
+      gameSpeed: 'normal',
+      gameId: 0
     };
 
     return this.rooms[roomId];

@@ -1,144 +1,129 @@
 <script lang="ts">
   import { gameState, roomId, localPlayer, localPlayerIndex } from '../store';
-  import type {  OwnedCard } from '../../shared/types';
+  import type { OwnedCard } from '../../shared/types';
   import { socket } from '../socket';
-  import { fly } from 'svelte/transition';
+  import { SUIT_SYMBOL } from '../utils/gameUtils';
 
   export let ownedCard: OwnedCard;
+  /** Only cards in your own hand are playable; cards on the table are display-only. */
+  export let interactive = false;
 
-  const card = ownedCard.card;
+  $: card = ownedCard.card;
+  $: hidden = card.suit === 'hidden';
 
-  let isPlayable = false;
   let isTurn = false;
+  let isPlayable = false;
   let mustFollowSuit = false;
 
-  $: if ($gameState && $localPlayer !== undefined) {
+  $: {
     const state = $gameState;
-    if (!state) {
+    const resolving = !!state && state.currentTrick.length === state.players.length;
+    isTurn = interactive && !!state && state.state === 'tricks' && state.currentPlayer === $localPlayerIndex && !resolving;
+    if (!isTurn || !state || !$localPlayer) {
       isPlayable = false;
-      isTurn = false;
+      mustFollowSuit = false;
+    } else if (!state.currentTrick.length) {
+      isPlayable = true;
+      mustFollowSuit = false;
     } else {
-      const isResolvingTrick =
-        state.state === 'tricks' &&
-        state.players?.length > 0 &&
-        state.currentTrick.length === state.players.length;
-      isTurn = state.currentPlayer === $localPlayerIndex && state.state === 'tricks' && !isResolvingTrick;
-
-      if (!isTurn) {
-        isPlayable = false;
-        mustFollowSuit = false;
-      } else if (!state.currentTrick.length) {
-        isPlayable = true;
-        mustFollowSuit = false;
-      } else {
-        const localHand = $localPlayer.hand;
-        const suitLed = state.currentTrick[0].card.suit;
-        const hasSuit = localHand.some(c => c.card.suit === suitLed);
-        mustFollowSuit = hasSuit;
-        isPlayable = hasSuit ? card.suit === suitLed : true;
-      }
+      const suitLed = state.currentTrick[0].card.suit;
+      mustFollowSuit = $localPlayer.hand.some((c) => c.card.suit === suitLed);
+      isPlayable = mustFollowSuit ? card.suit === suitLed : true;
     }
-  } else {
-    isPlayable = false;
-    isTurn = false;
-    mustFollowSuit = false;
   }
+
+  let sent = false;
+  $: if (!isTurn) sent = false;
 
   function playCard() {
-    if (!isPlayable || !isTurn) return;
-    socket.emit('playCard', {
-      roomId: $roomId,
-      card: ownedCard
-    });
+    if (!isPlayable || sent) return;
+    sent = true; // guard against double taps while the server responds
+    socket.emit('playCard', { roomId: $roomId, card: ownedCard });
   }
 
-  function getCardFilename(card: { value: string; suit: string }) {
-    // Capitalize first letter of value (A, K, Q, J, 10, 9, ...)
-    let value = card.value;
-    if (value.length === 1) value = value.toUpperCase();
-    else if (["jack","queen","king","ace"].includes(value.toLowerCase())) value = value[0].toUpperCase();
-    else if (["j","q","k","a"].includes(value.toLowerCase())) value = value.toUpperCase();
-    // For 10, leave as 10
-    // Capitalize suit
-    // let suit = card.suit.charAt(0).toUpperCase() + card.suit.slice(1).toLowerCase();
-    return `${value}_of_${card.suit.toLowerCase()}.svg`;
-  }
+  $: src = hidden ? '/cards/back.svg' : `/cards/${card.value}_of_${card.suit}.svg`;
+  $: label = hidden ? 'Face-down card' : `${card.value} of ${card.suit}`;
 </script>
 
-<div
-  class="card {isPlayable ? 'playable' : 'unplayable'} {$gameState?.state === 'bidding' ? 'viewing' : ''}"
-  class:must-follow={mustFollowSuit}
-  class:must-follow-valid={mustFollowSuit && isPlayable}
-  class:must-follow-invalid={mustFollowSuit && !isPlayable}
-  role="button"
-  tabindex={isPlayable ? 0 : -1}
-  aria-disabled={!isPlayable}
-  on:click={playCard}
-  on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && playCard()}
-  transition:fly={{ y: -50, duration: 400 }}
->
-  <img
-    src={`/cards/${getCardFilename(card)}`}
-    alt={`${card.value} of ${card.suit}`}
-    style="background: #fff; border-radius: 6px;"
-  />
-</div>
+{#if interactive}
+  <button
+    type="button"
+    class="card"
+    class:playable={isPlayable}
+    class:blocked={isTurn && !isPlayable}
+    class:follow={mustFollowSuit && isPlayable}
+    disabled={!isPlayable}
+    aria-label={`${label}${isPlayable ? ', playable' : ''}`}
+    data-no-button-sound="true"
+    on:click={playCard}
+  >
+    <img {src} alt="" draggable="false" />
+  </button>
+{:else}
+  <div class="card" class:back={hidden} role="img" aria-label={label} title={hidden ? undefined : `${card.value}${SUIT_SYMBOL[card.suit] ?? ''}`}>
+    <img {src} alt="" draggable="false" />
+  </div>
+{/if}
 
 <style>
+  /* Sized to the artwork's own proportions (167 x 243) so nothing is cropped. */
   .card {
-    width: clamp(60px, 12vw, 80px);
-    height: clamp(90px, 18vw, 120px);
-    cursor: pointer;
+    display: block;
+    width: var(--card-w, 84px);
+    aspect-ratio: 167 / 243;
+    padding: 0;
+    border: 0;
+    border-radius: calc(var(--card-w, 84px) * 0.06);
+    background: white;
+    box-shadow:
+      0 0 0 1px rgba(14, 34, 53, 0.18),
+      0 4px 10px rgba(3, 14, 24, 0.35);
     user-select: none;
-    transition: transform 0.2s;
-    background: #fff;
-    border: 1px solid rgba(255, 255, 255, 0.95);
-    border-radius: clamp(4px, 1vw, 6px);
-    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.22);
-    position: relative;
-    z-index: 1;
     touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
+    transition:
+      transform 160ms var(--ease-out),
+      box-shadow 160ms,
+      filter 160ms;
   }
   .card img {
+    display: block;
     width: 100%;
     height: 100%;
-    border-radius: clamp(4px, 1vw, 6px);
-    box-shadow: none;
-    background: #fff;
-    display: block;
-    outline: 1px solid rgba(255, 255, 255, 0.86);
-    outline-offset: -1px;
+    object-fit: contain;
+    pointer-events: none;
   }
-  .card.playable:hover {
-    transform: translateY(-10px) scale(1.05);
-    box-shadow: 0 6px 15px rgba(0,0,0,0.4);
+  /* The back image has its own rounded corners and border. */
+  .card.back {
+    background: transparent;
+    box-shadow: 0 4px 10px rgba(3, 14, 24, 0.35);
   }
-  @media (hover: none) {
-    .card.playable:active {
-      transform: translateY(-5px) scale(1.02);
-    }
+  .card.back img {
+    object-fit: fill;
   }
-  .card.unplayable {
-    cursor: not-allowed;
-    opacity: 0.6;
+  button.card {
+    cursor: default;
   }
-  .card.must-follow-invalid {
-    opacity: 0.42;
-    filter: brightness(0.72) saturate(0.82);
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
-  }
-  .card.must-follow-valid {
-    transform: translateY(-6px);
-    box-shadow:
-      0 8px 18px rgba(0, 0, 0, 0.35),
-      0 0 0 2px rgba(255, 228, 135, 0.75);
-  }
-  .card.must-follow-valid:hover {
-    transform: translateY(-12px) scale(1.05);
-  }
-  /* During bidding, show cards at full opacity so player can see their hand clearly */
-  .card.viewing {
+  button.card:disabled {
     opacity: 1;
+  }
+  .playable {
+    cursor: pointer;
+  }
+  .playable:hover,
+  .playable:focus-visible {
+    transform: translateY(-14px);
+    box-shadow:
+      0 0 0 3px var(--ice),
+      0 14px 24px rgba(3, 14, 24, 0.45);
+  }
+  .follow {
+    transform: translateY(-8px);
+    box-shadow:
+      0 0 0 2px var(--ice),
+      0 10px 20px rgba(3, 14, 24, 0.4);
+  }
+  /* Your turn, but this card can't be played (you must follow suit). */
+  .blocked {
+    filter: brightness(0.62) saturate(0.6);
   }
 </style>

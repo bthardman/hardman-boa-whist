@@ -3,132 +3,112 @@ import { gameState, localSocketId, localPlayerId, roomId } from '../store';
 import { get } from 'svelte/store';
 import type { GameState } from '../../shared/types';
 import { socket } from '../socket';
+import { showToast } from './toast';
 
-let errorHandlers: Map<string, (message: string) => void> = new Map();
+type ErrorHandler = (message: string) => void;
+type ErrorEvent = 'avatar_selection_error' | 'start_game_error' | 'play_card_error' | 'bid_error' | 'join_error';
+const ERROR_EVENTS: ErrorEvent[] = [
+  'avatar_selection_error',
+  'start_game_error',
+  'play_card_error',
+  'bid_error',
+  'join_error'
+];
+
+// Several components can listen to the same event; each gets its own entry.
+const errorHandlers = new Map<string, Set<ErrorHandler>>();
 let periodicSyncTimer: ReturnType<typeof setInterval> | null = null;
 let visibilityHandler: (() => void) | null = null;
-let focusHandler: (() => void) | null = null;
 let onlineHandler: (() => void) | null = null;
 
-function syncCurrentRoomState() {
+/** Re-joins the room (refreshes this socket's membership) and asks for the latest state. */
+function rejoinRoom() {
   const currentRoomId = get(roomId);
-  if (!currentRoomId) return;
-
   const currentPlayerId = get(localPlayerId);
-  if (currentPlayerId) {
-    // Re-assert membership in the room; harmless if already joined.
-    socket.emit('join_lobby', { roomId: currentRoomId, playerId: currentPlayerId });
-  }
-  socket.emit('get_state', { roomId: currentRoomId });
+  if (!currentRoomId || !currentPlayerId) return;
+  socket.emit('join_lobby', { roomId: currentRoomId, playerId: currentPlayerId });
 }
 
-export function registerErrorHandler(event: string, handler: (message: string) => void) {
-  errorHandlers.set(event, handler);
-}
-
-export function unregisterErrorHandler(event: string) {
-  errorHandlers.delete(event);
+/**
+ * Registers a handler for a server error event and returns a function that removes it.
+ * Events with no registered handler fall back to a toast, so errors are never silent.
+ */
+export function registerErrorHandler(event: ErrorEvent, handler: ErrorHandler): () => void {
+  if (!errorHandlers.has(event)) errorHandlers.set(event, new Set());
+  errorHandlers.get(event)!.add(handler);
+  return () => errorHandlers.get(event)?.delete(handler);
 }
 
 export function setupSocketHandlers() {
   // Avoid duplicate listeners in HMR/remount scenarios.
   cleanupSocketHandlers();
 
-  // State updates
-  socket.on("state_updated", (state: GameState) => {
+  socket.on('state_updated', (state: GameState) => {
     // Always assign a new array reference for Svelte reactivity
-    const newPlayers = [...state.players];
-    const updatedState = { ...state, players: newPlayers };
-    gameState.set(updatedState);
+    gameState.set({ ...state, players: [...state.players] });
   });
 
-  // Connection handling.
-  // We ALWAYS re-send join_lobby on (re)connect so the server re-adds this socket
-  // to the room's broadcast group and refreshes the player's socketId. Without this,
-  // reconnected sockets silently miss all `io.to(roomId).emit(...)` broadcasts,
-  // which makes the UI appear frozen until the user refreshes.
-  socket.on("connect", () => {
+  // We ALWAYS re-send join_lobby on (re)connect so the server re-adds this socket to the
+  // room's broadcast group and refreshes the player's socketId. Without this, reconnected
+  // sockets silently miss room broadcasts and the UI appears frozen until a refresh.
+  socket.on('connect', () => {
     localSocketId.set(socket.id);
-    // Request latest state and re-join room after reconnect.
-    syncCurrentRoomState();
+    rejoinRoom();
   });
 
-  socket.on("disconnect", () => {
-    // Clear the stored socket id so UI code that branches on connectivity can react.
+  socket.on('disconnect', () => {
     localSocketId.set(undefined);
   });
 
-  // Error handlers
-  socket.on("avatar_selection_error", (data: { message: string }) => {
-    const handler = errorHandlers.get("avatar_selection_error");
-    if (handler) handler(data.message);
-  });
+  for (const event of ERROR_EVENTS) {
+    socket.on(event, (data: { message: string }) => {
+      const handlers = errorHandlers.get(event);
+      if (handlers && handlers.size > 0) handlers.forEach((h) => h(data.message));
+      else showToast(data.message);
+    });
+  }
 
-  socket.on("start_game_error", (data: { message: string }) => {
-    const handler = errorHandlers.get("start_game_error");
-    if (handler) handler(data.message);
-  });
-
-  socket.on("play_card_error", (data: { message: string }) => {
-    const handler = errorHandlers.get("play_card_error");
-    if (handler) handler(data.message);
-  });
-
-  socket.on("bid_error", (data: { message: string }) => {
-    const handler = errorHandlers.get("bid_error");
-    if (handler) handler(data.message);
-  });
-
-  socket.on("join_error", (data: { message: string }) => {
-    const handler = errorHandlers.get("join_error");
-    if (handler) handler(data.message);
-  });
+  // Room-wide announcements, e.g. "Start cancelled: Carol joined the table."
+  socket.on('notice', (data: { message: string }) => showToast(data.message));
 
   // Initial sync: catches cases where connect fired before handlers were attached.
   if (socket.connected) {
     localSocketId.set(socket.id);
+    rejoinRoom();
   }
-  syncCurrentRoomState();
 
-  // Keep state fresh when app regains attention/network.
+  // Phones suspend background tabs; resync as soon as the game is visible or back online.
   if (typeof window !== 'undefined') {
     visibilityHandler = () => {
-      if (document.visibilityState === 'visible') syncCurrentRoomState();
+      if (document.visibilityState === 'visible') rejoinRoom();
     };
-    focusHandler = () => syncCurrentRoomState();
-    onlineHandler = () => syncCurrentRoomState();
+    onlineHandler = () => rejoinRoom();
     document.addEventListener('visibilitychange', visibilityHandler);
-    window.addEventListener('focus', focusHandler);
     window.addEventListener('online', onlineHandler);
   }
 
-  // Lightweight safety net for any missed room broadcasts.
+  // Lightweight safety net for any missed room broadcasts. The server only answers
+  // this socket (not the whole room) when nothing has changed.
   periodicSyncTimer = setInterval(() => {
-    if (socket.connected) syncCurrentRoomState();
+    if (socket.connected) socket.emit('get_state', { roomId: get(roomId) });
   }, 5000);
 }
 
 export function cleanupSocketHandlers() {
-  socket.off("state_updated");
-  socket.off("connect");
-  socket.off("disconnect");
-  socket.off("avatar_selection_error");
-  socket.off("start_game_error");
-  socket.off("play_card_error");
-  socket.off("bid_error");
-  socket.off("join_error");
+  socket.off('state_updated');
+  socket.off('connect');
+  socket.off('disconnect');
+  socket.off('notice');
+  for (const event of ERROR_EVENTS) socket.off(event);
 
   if (periodicSyncTimer) {
     clearInterval(periodicSyncTimer);
     periodicSyncTimer = null;
   }
-
   if (typeof window !== 'undefined') {
     if (visibilityHandler) document.removeEventListener('visibilitychange', visibilityHandler);
-    if (focusHandler) window.removeEventListener('focus', focusHandler);
     if (onlineHandler) window.removeEventListener('online', onlineHandler);
   }
   visibilityHandler = null;
-  focusHandler = null;
   onlineHandler = null;
 }
