@@ -106,7 +106,10 @@
   $: cardW = Math.round(Math.max(58, Math.min(isTablet ? 132 : 108, handWidth / 4.6, viewportH * 0.15)));
   // Short "1/2" tallies only when seats are squeezed; otherwise spell out "Won 1 of 2".
   $: textScale = $textSize === 'largest' ? 1.3 : $textSize === 'large' ? 1.15 : 1;
-  $: compactSeats = opponents.length * (isTablet ? 150 : 95) * textScale > viewportW;
+  // Short landscape tablets put each opponent's details beside their avatar (see the CSS), so seats are wider.
+  $: isShortLandscape = viewportW > viewportH && viewportW >= 700 && viewportH >= 521 && viewportH < 700;
+  $: seatWidth = isShortLandscape ? 190 : isTablet ? 150 : 95;
+  $: compactSeats = opponents.length * seatWidth * textScale > viewportW;
   $: spread = hand.length > 1 ? Math.min(cardW * 0.72, (handWidth - cardW - 36) / (hand.length - 1)) : 0;
 
   // ---- Screen-edge flash when your turn starts ----
@@ -415,7 +418,8 @@
         <div class="pill-note" transition:fly={{ y: -10, duration: 200 }}>{announcement}</div>
       {/if}
       {#if showTurnReminder}
-        <div class="pill-note urgent" transition:fly={{ y: -10, duration: 200 }}>Still your turn: tap a card to play it</div>
+        <!-- In the layout flow (not floating) so it squeezes the table instead of covering the trick. -->
+        <div class="pill-note urgent inline" transition:fly={{ y: 10, duration: 200 }}>Still your turn: tap a card to play it</div>
       {/if}
     </section>
 
@@ -580,7 +584,7 @@
   .table-zone {
     position: relative;
     display: grid;
-    grid-template-rows: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
     justify-items: center;
     align-items: center;
     padding: 10px 16px;
@@ -627,9 +631,12 @@
   }
   .bid-wrap {
     width: 100%;
+    max-height: 100%;
     display: grid;
     place-items: center;
     align-self: center;
+    /* On short screens the panel scrolls rather than spilling over the seats and hand. */
+    overflow-y: auto;
   }
   .trick {
     display: flex;
@@ -712,6 +719,11 @@
   }
   .pill-note.urgent {
     background: var(--ice);
+  }
+  .pill-note.inline {
+    position: static;
+    transform: none;
+    margin-top: 6px;
   }
   .absent-note {
     position: absolute;
@@ -951,6 +963,53 @@
       width: 36px;
       height: 36px;
       bottom: -16px;
+    }
+  }
+
+  /* ---------- Landscape tablets: your seat sits beside the hand, not above it ---------- */
+  @media (orientation: landscape) and (min-width: 700px) and (min-height: 521px) {
+    .my-area {
+      --seat-avatar: clamp(56px, 10vh, 80px);
+      grid-template-columns: minmax(0, 1fr) minmax(0, 640px) minmax(0, 1fr);
+      align-items: center;
+      column-gap: 12px;
+    }
+    .me-seat {
+      grid-column: 1;
+      grid-row: 1;
+      justify-self: end;
+    }
+    .me-seat :global(.seat.row) {
+      flex-direction: column;
+      text-align: center;
+      gap: 0.35rem;
+    }
+    .me-seat :global(.seat.row .meta) {
+      align-items: center;
+    }
+    .hand {
+      grid-column: 2;
+      grid-row: 1;
+      width: 100%;
+    }
+  }
+  /* Shorter landscape tablets (e.g. 16:10 Android): opponents' details beside their avatar to save height. */
+  @media (orientation: landscape) and (min-width: 700px) and (min-height: 521px) and (max-height: 699px) {
+    .opponents {
+      --seat-avatar: 52px;
+      width: min(100%, calc(var(--n) * 260px));
+      padding-top: 4px;
+    }
+    .opponents :global(.seat) {
+      flex-direction: row;
+      gap: 0.6rem;
+      text-align: left;
+    }
+    .opponents :global(.seat .meta) {
+      align-items: flex-start;
+    }
+    .table-zone {
+      padding: 6px 16px;
     }
   }
 

@@ -150,4 +150,29 @@
     font-size: 0.92rem;
     text-align: left;
   }
+  /*
+   * Short landscape screens (tablets, laptops, sideways phones): tighter spacing so the panel
+   * fits between the seats and the hand. The opponents' row already shows each bid, so the
+   * "bids so far" chips are dropped here.
+   */
+  @media (orientation: landscape) and (max-height: 799px) {
+    .bid-panel {
+      width: min(100%, 640px);
+      padding: 0.9rem 1.2rem;
+    }
+    h2 {
+      font-size: 1.6rem;
+    }
+    .context {
+      margin: 0.2rem 0 0.7rem;
+      font-size: 1rem;
+    }
+    .bids-so-far {
+      display: none;
+    }
+    .rule {
+      margin-top: 0.6rem;
+      padding: 0.4rem 0.7rem;
+    }
+  }
 </style>
