@@ -3,6 +3,7 @@
   import Lobby from './components/Lobby.svelte';
   import GameBoard from './components/GameBoard.svelte';
   import WinnerScreen from './components/WinnerScreen.svelte';
+  import WakeScreen from './components/WakeScreen.svelte';
   import { soundEffects } from './utils/soundEffects';
   import { toasts } from './utils/toast';
   import './utils/prefs'; // applies the saved text size before anything renders
@@ -49,10 +50,7 @@
     <button class="btn btn-primary" type="button" on:click={() => window.location.reload()}>Try again</button>
   </main>
 {:else if !$gameState}
-  <main class="notice" aria-busy="true">
-    <img src="/logo/logo.png" alt="Hardman Boa-Whist" />
-    <p>{everConnected ? 'Loading the table…' : 'Connecting to the table…'}</p>
-  </main>
+  <WakeScreen reconnecting={everConnected} />
 {:else if phase === 'lobby'}
   <Lobby />
 {:else if inGame}

@@ -28,6 +28,20 @@ const allowedOrigins = [
     .filter(Boolean)
 ];
 
+/**
+ * Exact matches from the allow-list, plus "https://*.example.com" entries matching any
+ * subdomain (e.g. Cloudflare Pages preview builds at <hash>.hardman-boa-whist.pages.dev).
+ */
+function isAllowedOrigin(origin: string): boolean {
+  return allowedOrigins.some((allowed) => {
+    if (allowed === origin) return true;
+    const wildcard = allowed.match(/^(https?:\/\/)\*\.(.+)$/);
+    if (!wildcard) return false;
+    const [, scheme, domain] = wildcard;
+    return origin.startsWith(scheme) && origin.slice(scheme.length).endsWith(`.${domain}`);
+  });
+}
+
 /** How long a player who drops out of the lobby keeps their seat before it is released. */
 const LOBBY_SEAT_GRACE_MS = 30_000;
 /** Countdown shown to everyone between pressing Start and the first deal. */
@@ -41,7 +55,7 @@ const PRACTICE_IDLE_MS = 10 * 60_000;
 
 const io = new Server(server, {
   // Cross-origin access (e.g. the Vite dev server on :5173) is limited to the allow-list.
-  cors: { origin: allowedOrigins, methods: ['GET', 'POST'] },
+  cors: { origin: (origin, callback) => callback(null, !origin || isAllowedOrigin(origin)), methods: ['GET', 'POST'] },
   // Same-origin connections (the built app served by this server) are always allowed,
   // so the deploy no longer depends on CORS_ORIGIN being set to the site's own URL.
   allowRequest: (req, callback) => {
@@ -52,8 +66,20 @@ const io = new Server(server, {
     } catch {
       /* malformed origin header: fall through to the allow-list */
     }
-    callback(null, allowedOrigins.includes(origin));
+    callback(null, isAllowedOrigin(origin));
   }
+});
+
+// A tiny "are you awake?" check. The front end (hosted separately) calls it to wake a sleeping
+// free-tier server and to know when it's ready; Render can also use it as its health check.
+app.get('/health', (req, res) => {
+  const origin = req.headers.origin;
+  if (origin && isAllowedOrigin(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ ok: true });
 });
 
 // Serve the built frontend when available (useful for single-service Render deploys).

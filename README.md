@@ -4,7 +4,7 @@
 
 <p align="center">
   <strong>The Hardman family's favourite card game, now on your phone.</strong><br />
-  <a href="https://hardman-boa-whist.onrender.com/">▶ Play it at hardman-boa-whist.onrender.com</a>
+  <a href="https://hardman-boa-whist.pages.dev/">▶ Play it at hardman-boa-whist.pages.dev</a>
 </p>
 
 ---
@@ -24,7 +24,7 @@ Each player uses their own phone. Open the link, pick your face, and the server 
 
 ### 1. Join the table
 
-1. Everyone opens **https://hardman-boa-whist.onrender.com/** on their own phone or computer.
+1. Everyone opens **https://hardman-boa-whist.pages.dev/** on their own phone or computer. If nobody has played for a while, the game server takes up to a minute to wake up; you'll see the logo with the family's faces circling it until it's ready.
 2. Tap the logo to get past the intro.
 3. Tap your picture on the **Who's playing?** screen. You'll see a **You** badge on your own seat and an **In** badge on everyone else who has joined. Tap your picture again to give up the seat.
 4. When at least two people are seated, anyone can press **Start game with N players**. There's a 3-second countdown, and anyone can cancel it. It's also cancelled automatically if someone joins, leaves or drops their connection.
@@ -159,4 +159,11 @@ The server is authoritative: it shuffles and deals, validates every bid and card
 
 ### Deployment
 
-The live game runs as a single web service on [Render](https://render.com/). The server serves the built front end from `dist/`, so the service needs to run `npm run build` and then `npm run start-server`. Set `CORS_ORIGIN` (comma-separated) only if the front end is served from a different origin than the server.
+The front end and the game server are hosted separately, both on free plans:
+
+| Part | Where | Settings |
+| --- | --- | --- |
+| Front end (the page you open) | [Cloudflare Pages](https://pages.cloudflare.com/): `hardman-boa-whist.pages.dev` | Build command `npm run build`, output `dist`, build variable `VITE_SOCKET_URL=https://hardman-boa-whist.onrender.com` |
+| Game server | [Render](https://render.com/) web service: `hardman-boa-whist.onrender.com` | Installs dependencies and runs `npm run build`, start `npm run start-server`, `CORS_ORIGIN=https://hardman-boa-whist.pages.dev` (comma-separated; `https://*.hardman-boa-whist.pages.dev` also allows preview builds), health check path `/health` |
+
+Both redeploy automatically when `main` changes. Render's free plan puts the server to sleep after 15 minutes with no traffic (an open game keeps it awake). Because the page itself comes from Cloudflare, it loads instantly and shows its own "waking up" screen while the server starts, calling `/health` to wake it. The Render address still serves the game too, as a fallback.
