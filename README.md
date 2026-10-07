@@ -45,7 +45,11 @@ Each round, every player is dealt **7 cards**. Starting with the first player an
 - Aces are high (2 is lowest, A is highest).
 - Whoever wins a trick leads the next one.
 
-Under each player you'll see a tracker like **Won 1 of 2**: tricks won so far out of what they bid.
+Under each player you'll see a tracker like **Won 1 of 2**: tricks won so far out of what they bid. Tap it to see the tricks they've won this round, card by card.
+
+Players who have already played to the current trick (or already bid) are dimmed, so you can see who's still to go.
+
+**Reactions:** tap your own picture to send a quick reaction ("What a play", "Slider", "Ouch", "Haha", "Got 'em", "Incoming"). Everyone at the table sees it as a speech bubble.
 
 ### 4. Score
 
@@ -78,7 +82,7 @@ When the game ends you can start a rematch with the same players.
 
 ## Settings
 
-Tap the ⚙️ button in the lobby or during a game.
+Tap **Settings** in the lobby, or ⚙️ during a game.
 
 - **Points to win** (1–5): set in the lobby before the game starts.
 - **Game pace** (Relaxed, Normal, Quick): how long the table pauses between tricks and rounds. Applies to everyone.
@@ -96,7 +100,7 @@ In the lobby, a seat is released if its player has been gone for 30 seconds.
 
 Computer players show up as **Player 2**, **Player 3** and so on, each with a robot picture in its own colour instead of a family face. They follow the same rules as everyone else, and the server checks every move they make.
 
-- **Adding them:** tap the robot button next to ⚙️ in the lobby, then **+ Add**. Tap ✕ on a computer player to remove it.
+- **Adding them:** tap **Computer players** in the lobby, then **+ Add**. Tap ✕ on a computer player to remove it.
 - **Playing on your own:** if you're the only person seated when the game starts, it automatically moves to a private table, so the family lobby stays free for everyone else. Your face shows **Practising** in the family lobby. If you leave mid-game, the computer players wait for you to come back. **Back to lobby** returns you to the family lobby with the same computer players.
 - **Playing with family:** with two or more people seated, computer players simply fill the empty seats at the family table.
 - **Difficulty** applies to all the computer players at the table:

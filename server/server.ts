@@ -3,8 +3,8 @@ import http from 'http';
 import { Server, type Socket } from 'socket.io';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import type { BotDifficulty, GameState, OwnedCard, Player } from '../shared/types.ts';
-import { AvatarChoice, MAX_PLAYERS } from '../shared/types.ts';
+import type { BotDifficulty, EmoteId, GameState, OwnedCard, Player } from '../shared/types.ts';
+import { AvatarChoice, EMOTES, MAX_PLAYERS } from '../shared/types.ts';
 import { RoomManager } from './utils/roomManager.ts';
 import { createDeck, cardValue } from './utils/cardUtils.ts';
 import { calculateTrickWinner, canPlayCard, dealCards } from './utils/gameLogic.ts';
@@ -161,6 +161,7 @@ const roundLogs = new Map<string, RoundLogEntry[]>();
 function startNextRound(room: GameState, isInitialStart = false): void {
   room.roundNumber++;
   roundLogs.set(room.roomId, []);
+  room.completedTricks = [];
   dealCards(createDeck(), room.players, 7);
 
   // Rotate the first player clockwise after each completed round (not before the very first round).
@@ -209,6 +210,7 @@ function resetGame(room: GameState): void {
   room.currentPlayer = 0;
   room.firstPlayer = 0;
   room.currentTrick = [];
+  room.completedTricks = [];
   room.winner = undefined;
   room.roundEndsAt = undefined;
   room.scoreboard = {};
@@ -355,6 +357,7 @@ function applyPlay(room: GameState, playerIndex: number, cardId: string | undefi
   // Trick complete: award it, then let clients see the cards briefly before clearing.
   const winnerIndex = calculateTrickWinner(room.currentTrick, room.players);
   if (winnerIndex !== -1) {
+    (room.completedTricks ??= []).push({ winnerId: room.players[winnerIndex].playerId, cards: room.currentTrick.slice() });
     room.players[winnerIndex].tricksWon++;
     room.currentPlayer = winnerIndex;
   }
@@ -860,6 +863,17 @@ io.on('connection', (rawSocket) => {
     const seat = currentSeat(roomId);
     if (!seat || seat.room.state !== 'lobby') return;
     if (cancelStartCountdown(seat.room, `${nameOf(seat.player)} cancelled the start.`)) broadcastState(seat.room);
+  });
+
+  // --- Emotes: a fixed set of quick reactions, shown to the table as a speech bubble ---
+  let lastEmoteAt = 0;
+  socket.on('emote', ({ roomId, emote }: { roomId: string; emote: EmoteId }) => {
+    const seat = currentSeat(roomId);
+    if (!seat || typeof emote !== 'string' || !Object.prototype.hasOwnProperty.call(EMOTES, emote)) return;
+    const now = Date.now();
+    if (now - lastEmoteAt < 1500) return; // no spamming
+    lastEmoteAt = now;
+    io.to(roomId).emit('emote', { playerId: seat.player.playerId, emote });
   });
 
   socket.on('playCard', ({ roomId, card }: { roomId: string; card: OwnedCard }) => {

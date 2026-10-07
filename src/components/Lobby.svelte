@@ -343,6 +343,18 @@
 
       {/if}
     </main>
+
+    {#if $gameState}
+      <div class="controls" class:hidden={seatsHidden}>
+        <button class="btn btn-ghost" type="button" disabled={introPlaying} on:click={() => (settingsOpen = true)}>
+          <Icon name="settings" size={20} /> Settings
+        </button>
+        <button class="btn btn-ghost bots-btn" type="button" disabled={introPlaying} on:click={() => (botsOpen = true)}>
+          <Icon name="robot" size={20} /> Computer players
+          {#if bots.length}<span class="count num">{bots.length}</span>{/if}
+        </button>
+      </div>
+    {/if}
   </div>
 
   {#if $gameState}
@@ -351,17 +363,10 @@
         <span>First to {target} {target === 1 ? 'point' : 'points'}</span>
         <span>{paceLabel}</span>
         {#if bots.length}
-          <span>{bots.length} computer {bots.length === 1 ? 'player' : 'players'} · {difficultyLabel}</span>
+          <span class="bots-pill">{bots.length} computer {bots.length === 1 ? 'player' : 'players'} · {difficultyLabel}</span>
         {/if}
       </div>
       <div class="dock-row">
-        <button class="icon-btn settings-btn" type="button" aria-label="Game settings" disabled={introPlaying} on:click={() => (settingsOpen = true)}>
-          <Icon name="settings" />
-        </button>
-        <button class="icon-btn bots-btn" type="button" aria-label="Computer players" disabled={introPlaying} on:click={() => (botsOpen = true)}>
-          <Icon name="robot" />
-          {#if bots.length}<span class="count num">{bots.length}</span>{/if}
-        </button>
         <button class="btn btn-primary start-button" type="button" data-no-button-sound="true" disabled={!canStart || introPlaying} on:click={startGame}>
           {startLabel}
         </button>
@@ -572,17 +577,22 @@
     width: min(100%, 460px);
     margin: 0 auto;
   }
-  .settings-btn,
-  .bots-btn {
-    position: relative;
-    width: 48px;
-    height: 48px;
-    flex: 0 0 auto;
+  /* Settings and computer players: under the faces (portrait) or under the logo (landscape). */
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+    margin: clamp(1rem, 3vh, 1.6rem) auto 0;
+    transition: opacity 0.6s ease, transform 0.6s var(--ease-out);
+  }
+  .controls .btn {
+    min-height: 44px;
+    padding: 0 1rem;
+    font-size: 1.1rem;
+    white-space: nowrap;
   }
   .bots-btn .count {
-    position: absolute;
-    top: -6px;
-    right: -6px;
     display: grid;
     place-items: center;
     min-width: 22px;
@@ -807,22 +817,56 @@
       gap: 24px 28px;
     }
   }
+  /* Narrow phones: both buttons on one row; the button already shows how many computer players. */
+  @media (max-width: 520px) {
+    .controls {
+      flex-wrap: nowrap;
+      gap: 8px;
+    }
+    .controls .btn {
+      min-height: 42px;
+      padding: 0 0.75rem;
+      gap: 0.35rem;
+      font-size: 1rem;
+    }
+    .bots-pill {
+      display: none;
+    }
+  }
+
   /* Landscape (tablets and sideways phones): logo on the left, faces on the right, so everything fits without scrolling. */
   @media (orientation: landscape) and (min-width: 640px) {
     .scroll {
-      display: flex;
-      align-items: center;
+      display: grid;
+      grid-template-columns: minmax(0, 34%) minmax(0, 620px);
+      grid-template-areas:
+        'brand seats'
+        'controls seats';
+      grid-template-rows: 1fr 1fr;
       justify-content: center;
-      gap: clamp(24px, 5vw, 72px);
+      align-content: center;
+      column-gap: clamp(24px, 5vw, 72px);
     }
     .brand {
-      flex: 0 1 34%;
+      grid-area: brand;
+      align-self: end;
     }
     .brand img {
       width: min(100%, 360px);
     }
+    .controls {
+      grid-area: controls;
+      align-self: start;
+      flex-direction: column;
+      align-items: center;
+      margin: clamp(0.8rem, 3vh, 1.6rem) 0 0;
+    }
+    .controls .btn {
+      min-width: min(100%, 240px);
+    }
     .seats {
-      flex: 0 1 620px;
+      grid-area: seats;
+      align-self: center;
       margin: 0;
     }
     h1 {

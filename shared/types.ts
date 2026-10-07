@@ -44,6 +44,17 @@ export type State = 'lobby' | 'bidding' | 'tricks' | 'round_end' | 'winner';
 export type GameSpeed = 'slow' | 'normal' | 'fast';
 export type BotDifficulty = 'easy' | 'medium' | 'hard';
 
+/** Quick reactions a player can show at the table (relayed by the server, never free text). */
+export const EMOTES = {
+  wow: { emoji: '😮', text: 'What a play' },
+  slider: { emoji: '😏', text: 'Slider' },
+  ouch: { emoji: '😬', text: 'Ouch' },
+  haha: { emoji: '😂', text: 'Haha' },
+  gotem: { emoji: '😎', text: "Got 'em" },
+  incoming: { emoji: '🚀', text: 'Incoming' }
+} as const;
+export type EmoteId = keyof typeof EMOTES;
+
 export type GameState = {
   roomId: string;
   /** A private solo table (one human plus computer players). */
@@ -61,6 +72,8 @@ export type GameState = {
   gameSpeed?: GameSpeed; // optional: timing speed preference for round flow
   /** How well the computer players play (default medium). */
   botDifficulty?: BotDifficulty;
+  /** Tricks completed this round, in order (public: everyone saw them played). */
+  completedTricks?: { winnerId: string; cards: OwnedCard[] }[];
   /** Family table only: faces busy in a private game against computer players. */
   practising?: AvatarChoice[];
   gameId?: number; // bumped on every new game/reset so stale server timers can be ignored

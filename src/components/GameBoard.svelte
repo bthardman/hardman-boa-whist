@@ -3,12 +3,14 @@
   import { onMount, onDestroy, tick } from 'svelte';
   import { fly, fade, scale } from 'svelte/transition';
   import { backOut } from 'svelte/easing';
-  import type { Player } from '../../shared/types';
+  import type { EmoteId, Player } from '../../shared/types';
+  import { EMOTES } from '../../shared/types';
   import Card from './Card.svelte';
   import Seat from './Seat.svelte';
   import BidModal from './BidModal.svelte';
   import Scoreboard from './Scoreboard.svelte';
   import SettingsSheet from './SettingsSheet.svelte';
+  import TricksSheet from './TricksSheet.svelte';
   import Icon from './ui/Icon.svelte';
   import { socket } from '../socket';
   import { displayName } from '../../shared/players';
@@ -76,6 +78,42 @@
   $: ledSuit = trick[0]?.card.suit ?? null;
   $: hand = $localPlayer ? sortHand($localPlayer.hand) : [];
   $: mustFollow = isLocalTurnToPlay && !!ledSuit && hand.some((c) => c.card.suit === ledSuit);
+  /** Players who've already played to the trick in progress (dimmed so those still to play stand out). */
+  $: playedIds = new Set(phase === 'tricks' && !isTrickResolving ? trick.map((c) => c.playerId) : []);
+
+  // ---- "Won 1 of 2" opens the tricks that player has won this round ----
+  let tricksFor: string | null = null;
+  $: tricksPlayer = tricksFor ? players.find((p) => p.playerId === tricksFor) : undefined;
+
+  // ---- Reactions: tap your picture to pick one; everyone sees it as a speech bubble ----
+  const emoteIds = Object.keys(EMOTES) as EmoteId[];
+  let emotePickerOpen = false;
+  let emotes: Record<string, { emoji: string; text: string }> = {};
+  const emoteTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  function onEmote({ playerId, emote }: { playerId: string; emote: EmoteId }) {
+    const e = EMOTES[emote];
+    if (!e) return;
+    emotes = { ...emotes, [playerId]: { ...e } }; // a fresh object replays the bubble animation
+    const old = emoteTimers.get(playerId);
+    if (old) clearTimeout(old);
+    emoteTimers.set(
+      playerId,
+      later(() => {
+        const { [playerId]: _gone, ...rest } = emotes;
+        emotes = rest;
+      }, 2900)
+    );
+  }
+  function sendEmote(emote: EmoteId) {
+    socket.emit('emote', { roomId: $roomId, emote });
+    emotePickerOpen = false;
+  }
+  /** Close the picker when tapping anywhere else (cards stay playable while it's open). */
+  function onWindowPointerDown(e: PointerEvent) {
+    if (!emotePickerOpen) return;
+    const target = e.target as Element | null;
+    if (!target?.closest('.emote-picker, .portrait-btn')) emotePickerOpen = false;
+  }
 
   function nameOf(player: Player | undefined): string {
     return displayName(player);
@@ -296,10 +334,12 @@
   }
 
   onMount(() => {
+    socket.on('emote', onEmote);
     players.forEach((player) => startAvatarSwap(player));
   });
 
   onDestroy(() => {
+    socket.off('emote', onEmote);
     timers.forEach((t) => clearTimeout(t));
     timers.clear();
     if (clock) clearInterval(clock);
@@ -312,7 +352,7 @@
   }
 </script>
 
-<svelte:window bind:innerHeight={viewportH} bind:innerWidth={viewportW} on:keydown={onKeydown} />
+<svelte:window bind:innerHeight={viewportH} bind:innerWidth={viewportW} on:keydown={onKeydown} on:pointerdown={onWindowPointerDown} />
 
 {#if state}
   <div class="board" class:my-turn={isLocalTurn} bind:this={boardEl}>
@@ -355,6 +395,9 @@
           trouble={bidInTrouble(state, player)}
           showTricks={!isBiddingPhase}
           compact={compactSeats}
+          done={isBiddingPhase ? typeof player.bid === 'number' : playedIds.has(player.playerId)}
+          emote={emotes[player.playerId] ?? null}
+          on:tally={() => (tricksFor = player.playerId)}
         />
       {/each}
     </section>
@@ -374,6 +417,7 @@
                   class="played"
                   class:winning={i === winningIndex}
                   class:losing={isTrickResolving && i !== winningIndex}
+                  class:behind={!isTrickResolving && i !== winningIndex}
                   in:fly={{ y: played.playerId === $localPlayer?.playerId ? 80 : -80, duration: 280 }}
                 >
                   <Card ownedCard={played} />
@@ -434,7 +478,22 @@
             justWon={trickWinnerId === $localPlayer.playerId && !isTrickResolving}
             trouble={bidInTrouble(state, $localPlayer)}
             showTricks={!isBiddingPhase}
+            done={isBiddingPhase ? typeof $localPlayer.bid === 'number' : playedIds.has($localPlayer.playerId)}
+            emote={emotes[$localPlayer.playerId] ?? null}
+            portraitButton
+            on:portrait={() => (emotePickerOpen = !emotePickerOpen)}
+            on:tally={() => (tricksFor = $localPlayer?.playerId ?? null)}
           />
+          {#if emotePickerOpen}
+            <div class="emote-picker" role="menu" aria-label="Send a reaction" transition:scale={{ start: 0.9, duration: 140 }}>
+              {#each emoteIds as id}
+                <button type="button" role="menuitem" on:click={() => sendEmote(id)}>
+                  <span class="emoji" aria-hidden="true">{EMOTES[id].emoji}</span>
+                  {EMOTES[id].text}
+                </button>
+              {/each}
+            </div>
+          {/if}
         </div>
         <div class="hand" bind:clientWidth={handWidth} style="--card-w: {cardW}px; height: {Math.round(cardW * 1.455 + 26)}px">
           {#each hand as owned, i (owned.card.id)}
@@ -487,7 +546,7 @@
                     {#if row.made}
                       <span class="tag made"><Icon name="check" size={14} /> +1</span>
                     {:else}
-                      <span class="tag missed">Missed</span>
+                      <span class="tag missed">{row.won > row.bid ? 'Too many' : 'Too few'}</span>
                     {/if}
                   </td>
                   <td class="num total">{row.total}</td>
@@ -501,6 +560,16 @@
           </div>
         </div>
       </div>
+    {/if}
+
+    {#if tricksPlayer && state}
+      <TricksSheet
+        player={tricksPlayer}
+        {players}
+        tricks={state.completedTricks ?? []}
+        isYou={tricksPlayer.playerId === $localPlayer?.playerId}
+        on:close={() => (tricksFor = null)}
+      />
     {/if}
 
     {#if scoreboardOpen}
@@ -663,6 +732,10 @@
   .played.losing {
     filter: brightness(0.6) saturate(0.7);
   }
+  /* Mid-trick, cards that aren't currently winning are dimmed a touch (less than once it's decided). */
+  .played.behind {
+    filter: brightness(0.86) saturate(0.85);
+  }
   .owner {
     position: absolute;
     left: 50%;
@@ -750,6 +823,7 @@
   /* ---------- Your seat + hand ---------- */
   .my-area {
     --seat-avatar: clamp(44px, 7vh, 60px);
+    position: relative;
     display: grid;
     justify-items: center;
     gap: 4px;
@@ -758,6 +832,45 @@
   }
   .me-seat {
     justify-self: center;
+  }
+  /* Opens above your hand: centred on phones, next to your picture in landscape (see below). */
+  .emote-picker {
+    position: absolute;
+    z-index: 60;
+    left: 12px;
+    right: 12px;
+    bottom: calc(100% + 6px);
+    margin: 0 auto;
+    max-width: max-content;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    padding: 8px;
+    border-radius: 18px;
+    background: var(--paper);
+    box-shadow: var(--shadow-sheet);
+  }
+  .emote-picker button {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 44px;
+    padding: 0 0.8rem;
+    border: 0;
+    border-radius: 12px;
+    background: white;
+    color: var(--ink);
+    font-weight: 700;
+    font-size: 0.95rem;
+    white-space: nowrap;
+    box-shadow: inset 0 0 0 1px var(--paper-line);
+    cursor: pointer;
+  }
+  .emote-picker button:hover {
+    background: var(--ice);
+  }
+  .emote-picker .emoji {
+    font-size: 1.3em;
   }
   .hand {
     position: relative;
@@ -978,6 +1091,10 @@
       grid-column: 1;
       grid-row: 1;
       justify-self: end;
+    }
+    .emote-picker {
+      right: auto;
+      margin: 0;
     }
     .me-seat :global(.seat.row) {
       flex-direction: column;
