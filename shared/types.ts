@@ -34,13 +34,20 @@ export type Player = {
   tricksWon: number;
   bid?: number;
   disconnected?: boolean;
+  /** A computer player: played by the server, never has a socket or a family avatar. */
+  isBot?: boolean;
+  /** "Player 2", "Player 3"… shown instead of an avatar name for bots. */
+  botName?: string;
 };
 
 export type State = 'lobby' | 'bidding' | 'tricks' | 'round_end' | 'winner';
 export type GameSpeed = 'slow' | 'normal' | 'fast';
+export type BotDifficulty = 'easy' | 'medium' | 'hard';
 
 export type GameState = {
   roomId: string;
+  /** A private solo table (one human plus computer players). */
+  isPractice?: boolean;
   players: Player[];
   currentPlayer: number; // player index
   firstPlayer: number; // player index
@@ -52,6 +59,8 @@ export type GameState = {
   maxRounds?: number; // optional: max rounds before game ends
   winningScore?: number; // optional: score threshold to win
   gameSpeed?: GameSpeed; // optional: timing speed preference for round flow
+  /** How well the computer players play (default medium). */
+  botDifficulty?: BotDifficulty;
   gameId?: number; // bumped on every new game/reset so stale server timers can be ignored
   roundEndsAt?: number; // epoch ms when the round summary auto-advances
   /** Set while the lobby is counting down to the first deal. */

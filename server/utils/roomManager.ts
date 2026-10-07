@@ -1,6 +1,7 @@
 // Room management and state
 import type { GameState, Player } from '../../shared/types.ts';
 import { AvatarChoice } from '../../shared/types.ts';
+import { isSeated } from '../../shared/players.ts';
 
 export class RoomManager {
   private rooms: Record<string, GameState> = {};
@@ -25,6 +26,7 @@ export class RoomManager {
       roundNumber: 0,
       winningScore: 5,
       gameSpeed: 'normal',
+      botDifficulty: 'medium',
       gameId: 0
     };
 
@@ -72,11 +74,12 @@ export class RoomManager {
     return room?.players.find(p => p.playerId === playerId);
   }
 
+  deleteRoom(roomId: string): void {
+    delete this.rooms[roomId];
+  }
+
   canStartGame(room: GameState): boolean {
-    const playersWithAvatars = room.players.filter(
-      p => p.selectedAvatar !== AvatarChoice.UNDEFINED
-    ).length;
-    return playersWithAvatars >= 2;
+    return room.players.filter(isSeated).length >= 2;
   }
 
   isAvatarTaken(room: GameState, avatarChoice: AvatarChoice, excludePlayerId: string): boolean {

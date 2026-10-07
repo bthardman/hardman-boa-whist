@@ -1,6 +1,6 @@
 <script lang="ts">
   import { gameState, localPlayer } from '../store';
-  import { getAvatarData } from '../avatarData';
+  import { displayName } from '../../shared/players';
   import { getPlayerAvatarUrl } from '../avatarUtils';
   import { biddingOrder, bidInTrouble } from '../utils/gameUtils';
 
@@ -27,7 +27,7 @@
       {#each standings as { player, score }, i (player.playerId)}
         <li class:me={isMe(player.playerId)} class:leader={soleLeader && i === 0}>
           <img class="avatar" src={getPlayerAvatarUrl(player)} alt="" />
-          <span class="name">{getAvatarData(player.selectedAvatar).name}{#if isMe(player.playerId)}<span class="you">&nbsp;(you)</span>{/if}</span>
+          <span class="name">{displayName(player)}{#if isMe(player.playerId)}<span class="you">&nbsp;(you)</span>{/if}</span>
           <span class="progress" aria-hidden="true">
             {#each Array.from({ length: Math.max(target, score) }) as _, n}
               <i class:filled={n < score}></i>
@@ -47,7 +47,7 @@
         <tbody>
           {#each biddingOrder(state) as player (player.playerId)}
             <tr class:me={isMe(player.playerId)}>
-              <td>{getAvatarData(player.selectedAvatar).name}</td>
+              <td>{displayName(player)}</td>
               <td class="num">{typeof player.bid === 'number' ? player.bid : '–'}</td>
               <td class="num" class:trouble={bidInTrouble(state, player)}>{player.tricksWon}</td>
             </tr>

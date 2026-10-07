@@ -2,7 +2,7 @@
   import { gameState, localPlayer, roomId } from '../store';
   import { socket } from '../socket';
   import { getWinnerAvatarUrl, getPlayerAvatarUrl } from '../avatarUtils';
-  import { getAvatarData } from '../avatarData';
+  import { displayName } from '../../shared/players';
   import { registerErrorHandler } from '../utils/socketHandlers';
   import { showToast } from '../utils/toast';
   import { onMount, onDestroy } from 'svelte';
@@ -23,7 +23,7 @@
 
   $: state = $gameState;
   $: winner = state?.winner;
-  $: winnerName = winner ? getAvatarData(winner.selectedAvatar).name : '';
+  $: winnerName = winner ? displayName(winner) : '';
   $: youWon = !!winner && winner.playerId === $localPlayer?.playerId;
   $: standings = state
     ? state.players
@@ -65,7 +65,7 @@
         <li class:first={places[i] === 1} class:me={player.playerId === $localPlayer?.playerId}>
           <span class="place num">{ordinal(places[i])}</span>
           <img class="avatar" src={getPlayerAvatarUrl(player)} alt="" />
-          <span class="name">{getAvatarData(player.selectedAvatar).name}</span>
+          <span class="name">{displayName(player)}</span>
           <span class="score num">{score}<span class="pts"> {score === 1 ? 'pt' : 'pts'}</span></span>
         </li>
       {/each}

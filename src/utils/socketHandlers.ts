@@ -29,6 +29,14 @@ function rejoinRoom() {
   socket.emit('join_lobby', { roomId: currentRoomId, playerId: currentPlayerId });
 }
 
+/** Moves this device to another table (family <-> practice). The server frees the old seat. */
+export function switchRoom(nextRoomId: string) {
+  if (get(roomId) === nextRoomId) return;
+  gameState.set(undefined);
+  roomId.set(nextRoomId);
+  rejoinRoom();
+}
+
 /**
  * Registers a handler for a server error event and returns a function that removes it.
  * Events with no registered handler fall back to a toast, so errors are never silent.

@@ -1,6 +1,6 @@
 <script lang="ts">
   /** Small inline line icons (no icon font / emoji, so they render the same everywhere). */
-  export let name: 'settings' | 'scores' | 'close' | 'crown' | 'check' | 'x' | 'wifi-off';
+  export let name: 'settings' | 'scores' | 'close' | 'crown' | 'check' | 'x' | 'wifi-off' | 'plus' | 'arrow-left';
   export let size = 22;
 </script>
 
@@ -30,6 +30,10 @@
     <path d="M20 6 9 17l-5-5" />
   {:else if name === 'x'}
     <path d="M18 6 6 18M6 6l12 12" />
+  {:else if name === 'plus'}
+    <path d="M12 5v14M5 12h14" />
+  {:else if name === 'arrow-left'}
+    <path d="M19 12H5M12 19l-7-7 7-7" />
   {:else if name === 'wifi-off'}
     <path d="M2 2l20 20M8.5 16.5a5 5 0 0 1 7 0M5 12.9a10 10 0 0 1 5.2-2.8M19 12.9a10 10 0 0 0-2.4-1.7M2 8.8a15 15 0 0 1 4.2-2.6M22 8.8A15 15 0 0 0 11 5" />
     <circle cx="12" cy="20" r="0.5" fill="currentColor" />

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Player } from '../../shared/types';
-  import { getAvatarData } from '../avatarData';
+  import { displayName } from '../../shared/players';
   import { getPlayerAvatarUrl } from '../avatarUtils';
   import Icon from './ui/Icon.svelte';
 
@@ -17,7 +17,7 @@
   /** Tight spaces (many players on a phone): "1/2" instead of "Won 1 of 2". */
   export let compact = false;
 
-  $: name = getAvatarData(player.selectedAvatar)?.name ?? 'Player';
+  $: name = displayName(player);
   $: hasBid = typeof player.bid === 'number';
   $: bid = player.bid ?? 0;
   $: won = player.tricksWon ?? 0;

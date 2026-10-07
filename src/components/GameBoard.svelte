@@ -11,7 +11,7 @@
   import SettingsSheet from './SettingsSheet.svelte';
   import Icon from './ui/Icon.svelte';
   import { socket } from '../socket';
-  import { getAvatarData } from '../avatarData';
+  import { displayName } from '../../shared/players';
   import { getPlayerAvatarUrl } from '../avatarUtils';
   import { startAvatarSwap, stopAllAvatarSwaps } from '../utils/avatarManager';
   import {
@@ -78,7 +78,7 @@
   $: mustFollow = isLocalTurnToPlay && !!ledSuit && hand.some((c) => c.card.suit === ledSuit);
 
   function nameOf(player: Player | undefined): string {
-    return player ? getAvatarData(player.selectedAvatar)?.name ?? 'Player' : 'Player';
+    return displayName(player);
   }
   function playerById(id: string): Player | undefined {
     return players.find((p) => p.playerId === id);

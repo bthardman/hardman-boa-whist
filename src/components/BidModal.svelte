@@ -2,7 +2,7 @@
   // The "your bid" panel shown in the middle of the table when it's your turn to bid.
   import type { Player } from '../../shared/types';
   import BidSelector from './BidSelector.svelte';
-  import { getAvatarData } from '../avatarData';
+  import { displayName } from '../../shared/players';
   import { getPlayerAvatarUrl } from '../avatarUtils';
   import { TRICKS_PER_ROUND, totalBids } from '../utils/gameUtils';
   import { createEventDispatcher, onDestroy } from 'svelte';
@@ -30,7 +30,7 @@
     const markers: Record<number, { avatarUrl: string; label: string }[]> = {};
     for (const p of others) {
       if (typeof p.bid !== 'number') continue;
-      (markers[p.bid] ??= []).push({ avatarUrl: getPlayerAvatarUrl(p), label: getAvatarData(p.selectedAvatar).name });
+      (markers[p.bid] ??= []).push({ avatarUrl: getPlayerAvatarUrl(p), label: displayName(p) });
     }
     return markers;
   })();
@@ -57,7 +57,7 @@
       {#each others as p (p.playerId)}
         <li class:pending={typeof p.bid !== 'number'}>
           <img class="avatar" src={getPlayerAvatarUrl(p)} alt="" />
-          <span class="who">{getAvatarData(p.selectedAvatar).name}</span>
+          <span class="who">{displayName(p)}</span>
           <span class="what">
             {#if typeof p.bid === 'number'}bid <strong class="num">{p.bid}</strong>{:else}bids after you{/if}
           </span>

@@ -20,7 +20,9 @@ function updatePlayerAvatar(playerId: string, nextAvatar: string): void {
 export function startAvatarSwap(player: Player): void {
   // Stop any existing swap for this player
   stopAvatarSwap(player.playerId);
-  
+  // Computer players have a single neutral picture: nothing to swap.
+  if (player.isBot) return;
+
   const avatarData = getAvatarData(player.selectedAvatar);
   updatePlayerAvatar(player.playerId, player.inGameAvatar || avatarData.avatar1);
   

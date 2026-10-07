@@ -3,7 +3,7 @@ import http from 'http';
 import { Server, type Socket } from 'socket.io';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import type { GameState, OwnedCard, Player } from '../shared/types.ts';
+import type { BotDifficulty, GameState, OwnedCard, Player } from '../shared/types.ts';
 import { AvatarChoice, MAX_PLAYERS } from '../shared/types.ts';
 import { RoomManager } from './utils/roomManager.ts';
 import { createDeck, cardValue } from './utils/cardUtils.ts';
@@ -11,6 +11,8 @@ import { calculateTrickWinner, canPlayCard, dealCards } from './utils/gameLogic.
 import { GameStateMachine } from './utils/gameStateMachine.ts';
 import { calculateRoundScores, updateTotalScores, checkGameEnd, findGameWinner, checkRoundEnd } from './utils/scoreCalculator.ts';
 import { isValidBid } from './utils/biddingRules.ts';
+import { FAMILY_ROOM_ID, displayName, isPracticeRoomId, isSeated, nextBotName, practiceRoomId } from '../shared/players.ts';
+import { chooseMove, type RoundLogEntry } from './bot/index.ts';
 
 const app = express();
 const server = http.createServer(app);
@@ -32,6 +34,12 @@ const LOBBY_SEAT_GRACE_MS = 30_000;
 const START_COUNTDOWN_MS = 3_000;
 /** How long the table waits for an offline player before playing their turn for them. */
 const ABSENT_AUTOPLAY_MS = 20_000;
+/** A computer player's "thinking" pause before it moves (scaled by game pace, plus a little randomness). */
+const BOT_THINK_MS = 1_100;
+/** Computer players a new practice table starts with. */
+const PRACTICE_STARTING_BOTS = 3;
+/** A practice table with nobody connected is thrown away after this long. */
+const PRACTICE_IDLE_MS = 10 * 60_000;
 
 const io = new Server(server, {
   // Cross-origin access (e.g. the Vite dev server on :5173) is limited to the allow-list.
@@ -94,8 +102,9 @@ function sendState(socket: GameSocket, room: GameState): void {
 }
 
 function broadcastState(room: GameState): void {
-  // Every state change is a chance that it's now an offline player's turn.
+  // Every state change is a chance that it's now an offline player's (or a computer player's) turn.
   scheduleAbsentAutoplay(room);
+  scheduleBotTurn(room);
   const members = io.sockets.adapter.rooms.get(room.roomId);
   if (members) {
     for (const socketId of members) {
@@ -111,8 +120,7 @@ function notifyRoom(room: GameState, message: string): void {
 }
 
 function nameOf(player: Player | undefined): string {
-  if (!player || player.selectedAvatar === AvatarChoice.UNDEFINED) return 'A player';
-  return player.selectedAvatar.charAt(0).toUpperCase() + player.selectedAvatar.slice(1);
+  return player ? displayName(player) : 'A player';
 }
 
 // ---------------------------------------------------------------------------
@@ -145,8 +153,15 @@ function afterDelay(room: GameState, ms: number, fn: (latest: GameState) => void
   );
 }
 
+/**
+ * Every card played this round, in order. Public information (everyone saw them played),
+ * kept on the server only so computer players can remember what's gone and who is out of a suit.
+ */
+const roundLogs = new Map<string, RoundLogEntry[]>();
+
 function startNextRound(room: GameState, isInitialStart = false): void {
   room.roundNumber++;
+  roundLogs.set(room.roomId, []);
   dealCards(createDeck(), room.players, 7);
 
   // Rotate the first player clockwise after each completed round (not before the very first round).
@@ -210,7 +225,7 @@ function resetGame(room: GameState): void {
  * Scores are keyed by seat index, so this must only happen before the first deal.
  */
 function removeSpectators(room: GameState): void {
-  const spectators = room.players.filter((p) => p.selectedAvatar === AvatarChoice.UNDEFINED);
+  const spectators = room.players.filter((p) => !isSeated(p));
   if (spectators.length === 0) return;
   const ids = new Set(spectators.map((p) => p.playerId));
   room.players = room.players.filter((p) => !ids.has(p.playerId));
@@ -224,8 +239,9 @@ function removeSpectators(room: GameState): void {
 }
 
 function startProblem(room: GameState): string | null {
+  if (!room.players.some((p) => !p.isBot && isSeated(p))) return 'Pick your picture to join the game first.';
   if (!roomManager.canStartGame(room)) return 'At least 2 players need to pick an avatar to start.';
-  const seated = room.players.filter((p) => p.selectedAvatar !== AvatarChoice.UNDEFINED).length;
+  const seated = room.players.filter(isSeated).length;
   if (seated > MAX_PLAYERS) return `A game can have at most ${MAX_PLAYERS} players.`;
   return null;
 }
@@ -261,7 +277,7 @@ function beginStartCountdown(room: GameState): void {
   room.startCountdown = {
     id,
     durationMs: START_COUNTDOWN_MS,
-    playerIds: room.players.filter((p) => p.selectedAvatar !== AvatarChoice.UNDEFINED).map((p) => p.playerId)
+    playerIds: room.players.filter(isSeated).map((p) => p.playerId)
   };
   startTimers.set(
     room.roomId,
@@ -324,6 +340,8 @@ function applyPlay(room: GameState, playerIndex: number, cardId: string | undefi
   if (!canPlayCard(cardInHand, player.hand, room.currentTrick)) return 'You must follow suit if you can.';
 
   player.hand = player.hand.filter((c) => c.card.id !== cardInHand.card.id);
+  const ledSuit = room.currentTrick[0]?.card.suit ?? cardInHand.card.suit;
+  roundLogs.get(room.roomId)?.push({ seat: playerIndex, card: cardInHand.card, ledSuit });
   room.currentTrick.push(cardInHand);
 
   if (room.currentTrick.length < room.players.length) {
@@ -369,8 +387,30 @@ function isAwaitingAbsentPlayer(room: GameState): boolean {
   return !!room.players[room.currentPlayer]?.disconnected;
 }
 
-/** A simple, safe move: the lowest legal bid, or the lowest legal card. */
+/**
+ * Plays the current player's turn for them (offline players and computer players) using the
+ * computer player's judgement. The move goes through applyBid / applyPlay, so it is checked
+ * like any other. If that ever fails, falls back to a simple safe move.
+ */
 function autoMove(room: GameState): void {
+  const idx = room.currentPlayer;
+  // Computer players play at the table's difficulty; an offline person gets sensible, mistake-free moves.
+  const difficulty = room.players[idx]?.isBot ? (room.botDifficulty ?? 'medium') : 'medium';
+  let move: ReturnType<typeof chooseMove> = null;
+  try {
+    move = chooseMove(room, idx, roundLogs.get(room.roomId) ?? [], difficulty);
+  } catch (err) {
+    console.error('Computer player failed to choose a move', err);
+  }
+  const error = !move ? 'no move' : move.kind === 'bid' ? applyBid(room, idx, move.bid) : applyPlay(room, idx, move.cardId);
+  if (error) {
+    console.error(`Computer move rejected (${error}); playing a safe move instead.`);
+    safeMove(room);
+  }
+}
+
+/** A simple, safe move: the lowest legal bid, or the lowest legal card. */
+function safeMove(room: GameState): void {
   const idx = room.currentPlayer;
   const player = room.players[idx];
   if (!player) return;
@@ -412,6 +452,91 @@ function scheduleAbsentAutoplay(room: GameState): void {
 }
 
 // ---------------------------------------------------------------------------
+// Computer players: take their turn after a short pause
+// ---------------------------------------------------------------------------
+
+const botTimers = new Map<string, string>();
+
+function hasConnectedHuman(room: GameState): boolean {
+  return room.players.some((p) => !p.isBot && !p.disconnected);
+}
+
+function isAwaitingBot(room: GameState): boolean {
+  if (room.state !== 'bidding' && room.state !== 'tricks') return false;
+  if (room.state === 'tricks' && room.currentTrick.length >= room.players.length) return false;
+  // Nobody watching: pause rather than let the bots play the whole game alone.
+  return !!room.players[room.currentPlayer]?.isBot && hasConnectedHuman(room);
+}
+
+function scheduleBotTurn(room: GameState): void {
+  if (!isAwaitingBot(room)) {
+    botTimers.delete(room.roomId);
+    return;
+  }
+  const key = turnKey(room);
+  if (botTimers.get(room.roomId) === key) return; // already scheduled for this turn
+  botTimers.set(room.roomId, key);
+  const thinkMs = BOT_THINK_MS * (0.8 + Math.random() * 0.5);
+  afterDelay(room, thinkMs, (latest) => {
+    if (turnKey(latest) !== key || !isAwaitingBot(latest)) return;
+    botTimers.delete(latest.roomId);
+    autoMove(latest);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Rooms: the family table, plus a private practice table per device
+// ---------------------------------------------------------------------------
+
+/** You may join the family table, or your own practice table, and nothing else. */
+function canJoinRoom(roomId: string, playerId: string): boolean {
+  return roomId === FAMILY_ROOM_ID || roomId === practiceRoomId(playerId);
+}
+
+function addBot(room: GameState): string | null {
+  if (room.players.filter(isSeated).length >= MAX_PLAYERS) return `The table is full — ${MAX_PLAYERS} players max.`;
+  room.players.push({
+    playerId: `bot-${room.roomId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    selectedAvatar: AvatarChoice.UNDEFINED,
+    isBot: true,
+    botName: nextBotName(room.players),
+    hand: [],
+    tricksWon: 0
+  });
+  return null;
+}
+
+function setUpPracticeRoom(room: GameState): void {
+  room.isPractice = true;
+  for (let i = 0; i < PRACTICE_STARTING_BOTS; i++) addBot(room);
+}
+
+const practiceCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/** Throws a practice table away once nobody has been connected to it for a while. */
+function schedulePracticeCleanup(room: GameState): void {
+  if (!room.isPractice) return;
+  clearTimeout(practiceCleanupTimers.get(room.roomId));
+  if (hasConnectedHuman(room)) {
+    practiceCleanupTimers.delete(room.roomId);
+    return;
+  }
+  practiceCleanupTimers.set(
+    room.roomId,
+    setTimeout(() => {
+      practiceCleanupTimers.delete(room.roomId);
+      const latest = roomManager.getRoom(room.roomId);
+      if (!latest || hasConnectedHuman(latest)) return;
+      cancelStartCountdown(latest);
+      roomManager.deleteRoom(latest.roomId);
+      roundLogs.delete(latest.roomId);
+      botTimers.delete(latest.roomId);
+      absentTimers.delete(latest.roomId);
+    }, PRACTICE_IDLE_MS)
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Socket handlers
 // ---------------------------------------------------------------------------
 
@@ -436,6 +561,12 @@ io.on('connection', (rawSocket) => {
   // --- Player joins lobby (also re-sent on every reconnect / tab focus) ---
   socket.on('join_lobby', ({ roomId, playerId }: { roomId: string; playerId: string }) => {
     if (typeof roomId !== 'string' || typeof playerId !== 'string' || !roomId || !playerId) return;
+    if (!canJoinRoom(roomId, playerId)) {
+      socket.emit('join_error', { message: "That table isn't available." });
+      return;
+    }
+    // Switching tables (family <-> practice): leave the old one first.
+    if (socket.data.roomId && socket.data.roomId !== roomId) leaveRoom();
     const existingRoom = roomManager.getRoom(roomId);
     const existingPlayer = existingRoom?.players.find((p) => p.playerId === playerId);
     const isActiveGame = existingRoom && existingRoom.state !== 'lobby' && existingRoom.state !== 'winner';
@@ -449,6 +580,8 @@ io.on('connection', (rawSocket) => {
     const changed = !existingPlayer || existingPlayer.disconnected || existingPlayer.socketId !== socket.id;
     roomManager.joinPlayer(roomId, playerId, socket.id);
     const room = roomManager.getRoom(roomId)!;
+    if (!existingRoom && isPracticeRoomId(roomId)) setUpPracticeRoom(room);
+    schedulePracticeCleanup(room);
     socket.data.roomId = roomId;
     socket.data.playerId = playerId;
     socket.join(roomId);
@@ -489,9 +622,7 @@ io.on('connection', (rawSocket) => {
       return;
     }
 
-    const seated = room.players.filter(
-      (p) => p.playerId !== player.playerId && p.selectedAvatar !== AvatarChoice.UNDEFINED
-    ).length;
+    const seated = room.players.filter((p) => p.playerId !== player.playerId && isSeated(p)).length;
     if (seated >= MAX_PLAYERS) {
       socket.emit('avatar_selection_error', { message: `The table is full — ${MAX_PLAYERS} players max.` });
       return;
@@ -519,10 +650,67 @@ io.on('connection', (rawSocket) => {
     room.players.forEach((player) => {
       player.selectedAvatar = AvatarChoice.UNDEFINED;
     });
+    // Clearing the family table clears its computer players too; a practice table keeps them.
+    if (!room.isPractice) room.players = room.players.filter((p) => !p.isBot);
     broadcastState(room);
   });
 
-  socket.on('set_game_speed', ({ roomId, gameSpeed }: { roomId: string; gameSpeed: 'slow' | 'normal' | 'fast' }) => {
+  // --- Computer players: anyone at the table can add or remove them before a game ---
+  socket.on('add_bot', ({ roomId }: { roomId: string }) => {
+    const seat = currentSeat(roomId);
+    if (!seat || (seat.room.state !== 'lobby' && seat.room.state !== 'winner')) return;
+    const error = addBot(seat.room);
+    if (error) {
+      socket.emit('avatar_selection_error', { message: error });
+      return;
+    }
+    cancelStartCountdown(seat.room, 'Start cancelled: a computer player joined the table.');
+    broadcastState(seat.room);
+  });
+
+  socket.on('remove_bot', ({ roomId, playerId }: { roomId: string; playerId: string }) => {
+    const seat = currentSeat(roomId);
+    if (!seat || (seat.room.state !== 'lobby' && seat.room.state !== 'winner')) return;
+    const bot = seat.room.players.find((p) => p.playerId === playerId && p.isBot);
+    if (!bot) return;
+    seat.room.players = seat.room.players.filter((p) => p !== bot);
+    cancelStartCountdown(seat.room, `Start cancelled: ${nameOf(bot)} left the table.`);
+    broadcastState(seat.room);
+  });
+
+  /**
+   * Leaves the table this socket is on (when switching between the family and practice tables).
+   * Before a game your seat is freed; mid-game you're treated as offline so your turns get played.
+   */
+  function leaveRoom(): void {
+    const seat = socket.data.roomId ? currentSeat(socket.data.roomId) : null;
+    if (socket.data.roomId) socket.leave(socket.data.roomId);
+    socket.data.roomId = undefined;
+    if (!seat) return;
+    const { room, player } = seat;
+    const midGame = room.state !== 'lobby' && room.state !== 'winner';
+    if (midGame) {
+      player.disconnected = true;
+      player.socketId = undefined;
+    } else {
+      room.players = room.players.filter((p) => p !== player);
+      if (isSeated(player)) cancelStartCountdown(room, `Start cancelled: ${nameOf(player)} left the table.`);
+    }
+    schedulePracticeCleanup(room);
+    broadcastState(room);
+  }
+
+  socket.on('leave_room', () => leaveRoom());
+
+  socket.on('set_bot_difficulty', ({ roomId, difficulty }: { roomId: string; difficulty: BotDifficulty }) => {
+    const seat = currentSeat(roomId);
+    if (!seat || seat.room.state !== 'lobby') return;
+    if (difficulty !== 'easy' && difficulty !== 'medium' && difficulty !== 'hard') return;
+    seat.room.botDifficulty = difficulty;
+    broadcastState(seat.room);
+  });
+
+  socket.on('set_game_speed',({ roomId, gameSpeed }: { roomId: string; gameSpeed: 'slow' | 'normal' | 'fast' }) => {
     const room = roomManager.getRoom(roomId);
     if (!room) return;
     room.gameSpeed = gameSpeed === 'slow' || gameSpeed === 'fast' ? gameSpeed : 'normal';
@@ -536,9 +724,10 @@ io.on('connection', (rawSocket) => {
     if (!result) return;
     const { room, player } = result;
     player.disconnected = true;
-    if (player.selectedAvatar !== AvatarChoice.UNDEFINED) {
+    if (isSeated(player)) {
       cancelStartCountdown(room, `Start cancelled: ${nameOf(player)} lost connection.`);
     }
+    schedulePracticeCleanup(room);
     broadcastState(room);
 
     // A player who leaves the lobby and doesn't come back gives their seat up,

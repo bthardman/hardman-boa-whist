@@ -1,6 +1,7 @@
 import { writable, derived } from 'svelte/store';
 import type { GameState, Player } from '../shared/types';
 import { v4 as uuidv4 } from 'uuid';
+import { FAMILY_ROOM_ID, practiceRoomId } from '../shared/players';
 
 /** A stable id for this browser, so a refresh or reconnect returns you to your seat. */
 function loadPlayerId(): string {
@@ -41,4 +42,23 @@ export const localPlayerIndex = derived([gameState, localPlayerId], ([$gameState
 
 export const isLocalPlayer = (player: Player) => player.playerId === persistentId;
 
-export const roomId = writable<string>('familyroom');
+/** Remembered per tab, so refreshing a practice game keeps you on your practice table. */
+const ROOM_KEY = 'roomId';
+function loadRoomId(): string {
+  try {
+    const saved = sessionStorage.getItem(ROOM_KEY);
+    if (saved === FAMILY_ROOM_ID || saved === practiceRoomId(persistentId)) return saved;
+  } catch {
+    /* storage blocked: start at the family table */
+  }
+  return FAMILY_ROOM_ID;
+}
+
+export const roomId = writable<string>(loadRoomId());
+roomId.subscribe((id) => {
+  try {
+    sessionStorage.setItem(ROOM_KEY, id);
+  } catch {
+    /* storage blocked: the table just won't survive a refresh */
+  }
+});

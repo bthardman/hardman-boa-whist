@@ -88,9 +88,22 @@ The 📊 button during a game shows the full scoreboard.
 
 ## If someone drops out
 
-If a player loses connection mid-game, their seat is marked **Away**. The table waits 20 seconds for them to come back, then plays a safe move for them (the lowest legal bid or card). Anyone at the table can tap **Play for … now** to skip the wait. When the player reconnects, they carry on from where they left off.
+If a player loses connection mid-game, their seat is marked **Away**. The table waits 20 seconds for them to come back, then plays a sensible move for them, using the same thinking as a Medium computer player. Anyone at the table can tap **Play for … now** to skip the wait. When the player reconnects, they carry on from where they left off.
 
 In the lobby, a seat is released if its player has been gone for 30 seconds.
+
+## Practise with computer players
+
+Computer players show up as **Player 2**, **Player 3** and so on, with a robot picture instead of a family face. They follow the same rules as everyone else, and the server checks every move they make.
+
+- **Practise on my own:** tap this at the bottom of the lobby to open your own private practice table. It starts with three computer players. Your practice game never blocks the family table, so others can still start a game there. If you leave mid-game, the computer players wait for you to come back.
+- **Fill empty seats:** at the family table, tap **+ Add** under *Computer players* to make up the numbers. Tap ✕ on a computer player to remove it.
+- **Difficulty** applies to all the computer players at the table:
+  - **Easy** plays by rules of thumb and sometimes misjudges a bid or plays a loose card.
+  - **Medium** looks ahead a little before each bid and card.
+  - **Hard** imagines hundreds of ways the hidden cards could be dealt, plays each one out, and picks whatever most often lands exactly on its bid.
+
+Computer players don't cheat: they only know their own hand and what has been played in front of everyone.
 
 ## Running it locally
 
@@ -132,6 +145,7 @@ Then open http://localhost:3000.
 | --- | --- |
 | `server/server.ts` | Express + Socket.IO server: rooms, turns, timers and broadcasting game state |
 | `server/utils/` | Game rules: dealing, follow-suit and trick winners, bidding rules, scoring |
+| `server/bot/` | Computer players: what each one may see, the Easy/Medium/Hard strategies, and the Monte Carlo search |
 | `shared/types.ts` | Types shared by the client and server |
 | `src/` | Svelte front end (lobby, game board, bidding, scoreboard, settings) |
 | `public/` | Card images, player avatars, fonts and the logo |

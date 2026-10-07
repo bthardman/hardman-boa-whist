@@ -1,6 +1,6 @@
 // Client-side game helpers (display only — the server is authoritative).
 import type { GameState, OwnedCard, Player } from '../../shared/types';
-import { AvatarChoice } from '../../shared/types';
+export { isSeated } from '../../shared/players';
 
 export const TRICKS_PER_ROUND = 7;
 const VALUE_ORDER = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
@@ -58,10 +58,6 @@ export function biddingOrder(state: GameState | undefined): Player[] {
   const n = state.players.length;
   const start = state.firstPlayer ?? 0;
   return Array.from({ length: n }, (_, i) => state.players[(start + i) % n]);
-}
-
-export function isSeated(player: Player): boolean {
-  return player.selectedAvatar !== AvatarChoice.UNDEFINED;
 }
 
 /**
