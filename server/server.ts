@@ -36,8 +36,6 @@ const START_COUNTDOWN_MS = 3_000;
 const ABSENT_AUTOPLAY_MS = 20_000;
 /** A computer player's "thinking" pause before it moves (scaled by game pace, plus a little randomness). */
 const BOT_THINK_MS = 1_100;
-/** Computer players a new practice table starts with. */
-const PRACTICE_STARTING_BOTS = 3;
 /** A practice table with nobody connected is thrown away after this long. */
 const PRACTICE_IDLE_MS = 10 * 60_000;
 
@@ -93,7 +91,8 @@ function viewFor(room: GameState, viewerId: string | undefined): GameState {
   return {
     ...room,
     players: room.players.map(hide),
-    winner: room.winner ? hide(room.winner) : undefined
+    winner: room.winner ? hide(room.winner) : undefined,
+    practising: room.roomId === FAMILY_ROOM_ID ? practisingAvatars() : undefined
   };
 }
 
@@ -286,9 +285,12 @@ function beginStartCountdown(room: GameState): void {
       const latest = roomManager.getRoom(room.roomId);
       if (!latest || latest.state !== 'lobby' || latest.startCountdown?.id !== id) return;
       latest.startCountdown = undefined;
-      const error = beginGame(latest);
-      if (error) notifyRoom(latest, error);
-      broadcastState(latest);
+      // One person against computer players plays on a private table, so the family table stays free.
+      const game = moveSoloGameToPrivateTable(latest);
+      const error = beginGame(game);
+      if (error) notifyRoom(game, error);
+      broadcastState(game);
+      if (game !== latest) broadcastState(latest);
     }, START_COUNTDOWN_MS)
   );
 }
@@ -506,9 +508,97 @@ function addBot(room: GameState): string | null {
   return null;
 }
 
-function setUpPracticeRoom(room: GameState): void {
-  room.isPractice = true;
-  for (let i = 0; i < PRACTICE_STARTING_BOTS; i++) addBot(room);
+/** Moves a connected person's socket to another table and tells their device. */
+function moveSocket(player: Player, from: string, to: string): void {
+  const s = player.socketId ? (io.sockets.sockets.get(player.socketId) as GameSocket | undefined) : undefined;
+  if (!s) return;
+  s.leave(from);
+  s.join(to);
+  s.data.roomId = to;
+  s.emit('room_changed', { roomId: to });
+}
+
+/**
+ * If the only person seated is playing against computer players, moves them and their
+ * computer players to a private table (so the family table stays free) and returns it.
+ * Otherwise returns the same room.
+ */
+function moveSoloGameToPrivateTable(room: GameState): GameState {
+  if (room.isPractice) return room;
+  const seated = room.players.filter(isSeated);
+  const people = seated.filter((p) => !p.isBot);
+  if (people.length !== 1 || seated.length < 2) return room;
+  const [person] = people;
+
+  const id = practiceRoomId(person.playerId);
+  discardPracticeRoom(id); // any stale private table from before
+  const practice = roomManager.createRoom(id);
+  practice.isPractice = true;
+  practice.winningScore = room.winningScore;
+  practice.gameSpeed = room.gameSpeed;
+  practice.botDifficulty = room.botDifficulty;
+  practice.players = seated;
+  room.players = room.players.filter((p) => !seated.includes(p));
+  moveSocket(person, room.roomId, id);
+  return practice;
+}
+
+/**
+ * Ends a private game and puts the person back at the family table, keeping their face
+ * (if nobody has taken it) and, when the family lobby is otherwise empty, their computer players.
+ */
+function returnToFamilyTable(practice: GameState): void {
+  const family = roomManager.createRoom(FAMILY_ROOM_ID);
+  const familyFree = family.state === 'lobby' || family.state === 'winner';
+  const bots = practice.players.filter((p) => p.isBot);
+  const people = practice.players.filter((p) => !p.isBot);
+  discardPracticeRoom(practice.roomId);
+
+  for (const person of people) {
+    moveSocket(person, practice.roomId, FAMILY_ROOM_ID);
+    // A game is under way at the family table: the device rejoins and is told to wait.
+    if (!familyFree || person.disconnected) continue;
+    family.players = family.players.filter((p) => p.playerId !== person.playerId);
+    const faceTaken = roomManager.isAvatarTaken(family, person.selectedAvatar, person.playerId);
+    family.players.push({
+      ...person,
+      selectedAvatar: faceTaken ? AvatarChoice.UNDEFINED : person.selectedAvatar,
+      hand: [],
+      tricksWon: 0,
+      bid: undefined
+    });
+  }
+
+  const othersSeated = family.players.some((p) => isSeated(p) && !people.some((q) => q.playerId === p.playerId));
+  if (familyFree && !othersSeated) {
+    family.players = family.players.filter((p) => !p.isBot);
+    for (const _ of bots) addBot(family);
+    family.botDifficulty = practice.botDifficulty;
+  }
+  if (familyFree) cancelStartCountdown(family);
+  broadcastState(family);
+}
+
+function discardPracticeRoom(roomId: string): void {
+  const room = roomManager.getRoom(roomId);
+  if (!room) return;
+  cancelStartCountdown(room);
+  room.gameId = (room.gameId ?? 0) + 1; // stop any pending timers acting on it
+  roomManager.deleteRoom(roomId);
+  roundLogs.delete(roomId);
+  botTimers.delete(roomId);
+  absentTimers.delete(roomId);
+  clearTimeout(practiceCleanupTimers.get(roomId));
+  practiceCleanupTimers.delete(roomId);
+}
+
+/** Faces currently busy in a private game, shown as "Practising" in the family lobby. */
+function practisingAvatars(): AvatarChoice[] {
+  return roomManager
+    .allRooms()
+    .filter((r) => r.isPractice && r.state !== 'lobby')
+    .flatMap((r) => r.players.filter((p) => !p.isBot && !p.disconnected).map((p) => p.selectedAvatar))
+    .filter((a) => a !== AvatarChoice.UNDEFINED);
 }
 
 const practiceCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -527,11 +617,7 @@ function schedulePracticeCleanup(room: GameState): void {
       practiceCleanupTimers.delete(room.roomId);
       const latest = roomManager.getRoom(room.roomId);
       if (!latest || hasConnectedHuman(latest)) return;
-      cancelStartCountdown(latest);
-      roomManager.deleteRoom(latest.roomId);
-      roundLogs.delete(latest.roomId);
-      botTimers.delete(latest.roomId);
-      absentTimers.delete(latest.roomId);
+      discardPracticeRoom(latest.roomId);
     }, PRACTICE_IDLE_MS)
   );
 }
@@ -565,6 +651,11 @@ io.on('connection', (rawSocket) => {
       socket.emit('join_error', { message: "That table isn't available." });
       return;
     }
+    // A private game that has since finished or been tidied away: back to the family table.
+    if (isPracticeRoomId(roomId) && !roomManager.getRoom(roomId)) {
+      roomId = FAMILY_ROOM_ID;
+      socket.emit('room_changed', { roomId });
+    }
     // Switching tables (family <-> practice): leave the old one first.
     if (socket.data.roomId && socket.data.roomId !== roomId) leaveRoom();
     const existingRoom = roomManager.getRoom(roomId);
@@ -580,7 +671,7 @@ io.on('connection', (rawSocket) => {
     const changed = !existingPlayer || existingPlayer.disconnected || existingPlayer.socketId !== socket.id;
     roomManager.joinPlayer(roomId, playerId, socket.id);
     const room = roomManager.getRoom(roomId)!;
-    if (!existingRoom && isPracticeRoomId(roomId)) setUpPracticeRoom(room);
+
     schedulePracticeCleanup(room);
     socket.data.roomId = roomId;
     socket.data.playerId = playerId;
@@ -617,6 +708,10 @@ io.on('connection', (rawSocket) => {
 
     if (!Object.values(AvatarChoice).includes(avatarChoice)) return;
 
+    if (room.roomId === FAMILY_ROOM_ID && practisingAvatars().includes(avatarChoice)) {
+      socket.emit('avatar_selection_error', { message: 'They are practising against the computer right now.' });
+      return;
+    }
     if (roomManager.isAvatarTaken(room, avatarChoice, player.playerId)) {
       socket.emit('avatar_selection_error', { message: 'Someone else is already playing as that person.' });
       return;
@@ -699,8 +794,6 @@ io.on('connection', (rawSocket) => {
     schedulePracticeCleanup(room);
     broadcastState(room);
   }
-
-  socket.on('leave_room', () => leaveRoom());
 
   socket.on('set_bot_difficulty', ({ roomId, difficulty }: { roomId: string; difficulty: BotDifficulty }) => {
     const seat = currentSeat(roomId);
@@ -802,6 +895,10 @@ io.on('connection', (rawSocket) => {
   socket.on('cancel_game', ({ roomId }: { roomId: string }) => {
     const room = roomManager.getRoom(roomId);
     if (!room) return;
+    if (room.isPractice) {
+      returnToFamilyTable(room);
+      return;
+    }
     resetGame(room);
     broadcastState(room);
   });

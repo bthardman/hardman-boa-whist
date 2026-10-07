@@ -104,13 +104,15 @@
   .winner-screen {
     height: 100dvh;
     overflow-y: auto;
-    padding: max(24px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+    display: grid;
+    align-content: center;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
   }
   .content {
     width: min(100%, 460px);
     margin: 0 auto;
     display: grid;
-    gap: 1.6rem;
+    gap: clamp(0.8rem, 2.5vh, 1.6rem);
   }
   .hero {
     display: grid;
@@ -125,7 +127,8 @@
   }
   .portrait {
     position: relative;
-    width: clamp(150px, 42vw, 200px);
+    /* Shrinks on shorter screens so the whole result fits without scrolling. */
+    width: clamp(96px, min(42vw, 22vh), 200px);
     aspect-ratio: 1;
     border-radius: 50%;
     animation: winner-pop 700ms var(--ease-out) both;
@@ -171,7 +174,7 @@
     grid-template-columns: 2.6rem 40px 1fr auto;
     align-items: center;
     gap: 0.7rem;
-    padding: 0.55rem 0.8rem 0.55rem 0.6rem;
+    padding: clamp(0.3rem, 1vh, 0.55rem) 0.8rem clamp(0.3rem, 1vh, 0.55rem) 0.6rem;
     border-radius: 14px;
   }
   .standings li + li {
@@ -213,7 +216,28 @@
   }
   .actions {
     display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 10px;
+  }
+  .actions .btn {
+    padding: 0 0.8rem;
+  }
+
+  /* Landscape: the winner on the left, scores and buttons on the right. */
+  @media (orientation: landscape) and (min-width: 700px) {
+    .content {
+      width: min(100%, 960px);
+      grid-template-columns: 1fr minmax(0, 460px);
+      grid-template-rows: auto auto;
+      align-items: center;
+      column-gap: clamp(24px, 5vw, 64px);
+    }
+    .hero {
+      grid-row: 1 / span 2;
+    }
+    .portrait {
+      width: clamp(120px, 30vh, 220px);
+    }
   }
   .confirm p {
     margin: 0.6rem 0 1.2rem;

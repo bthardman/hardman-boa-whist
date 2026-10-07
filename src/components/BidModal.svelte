@@ -151,13 +151,13 @@
     text-align: left;
   }
   /*
-   * Short landscape screens (tablets, laptops, sideways phones): tighter spacing so the panel
+   * Screens under 900px tall (phones, landscape tablets and laptops): tighter spacing so the panel
    * fits between the seats and the hand. The opponents' row already shows each bid, so the
    * "bids so far" chips are dropped here.
    */
-  @media (orientation: landscape) and (max-height: 799px) {
+  @media (max-height: 899px) {
     .bid-panel {
-      width: min(100%, 640px);
+      width: min(100%, 720px);
       padding: 0.9rem 1.2rem;
     }
     h2 {

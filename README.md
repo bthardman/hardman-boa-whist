@@ -94,10 +94,11 @@ In the lobby, a seat is released if its player has been gone for 30 seconds.
 
 ## Practise with computer players
 
-Computer players show up as **Player 2**, **Player 3** and so on, with a robot picture instead of a family face. They follow the same rules as everyone else, and the server checks every move they make.
+Computer players show up as **Player 2**, **Player 3** and so on, each with a robot picture in its own colour instead of a family face. They follow the same rules as everyone else, and the server checks every move they make.
 
-- **Practise on my own:** tap this at the bottom of the lobby to open your own private practice table. It starts with three computer players. Your practice game never blocks the family table, so others can still start a game there. If you leave mid-game, the computer players wait for you to come back.
-- **Fill empty seats:** at the family table, tap **+ Add** under *Computer players* to make up the numbers. Tap ✕ on a computer player to remove it.
+- **Adding them:** tap the robot button next to ⚙️ in the lobby, then **+ Add**. Tap ✕ on a computer player to remove it.
+- **Playing on your own:** if you're the only person seated when the game starts, it automatically moves to a private table, so the family lobby stays free for everyone else. Your face shows **Practising** in the family lobby. If you leave mid-game, the computer players wait for you to come back. **Back to lobby** returns you to the family lobby with the same computer players.
+- **Playing with family:** with two or more people seated, computer players simply fill the empty seats at the family table.
 - **Difficulty** applies to all the computer players at the table:
   - **Easy** plays by rules of thumb and sometimes misjudges a bid or plays a loose card.
   - **Medium** looks ahead a little before each bid and card.

@@ -1,22 +1,22 @@
 <script lang="ts" context="module">
-  /** Set when switching between the family and practice tables, so the intro doesn't replay. */
-  let skipNextIntro = false;
+  /** The logo intro plays once per visit, not every time you come back to the lobby after a game. */
+  let introPlayed = false;
 </script>
 
 <script lang="ts">
   import { onMount, onDestroy, afterUpdate } from 'svelte';
-  import { gameState, roomId, localPlayer, persistentId } from '../store';
-  import { FAMILY_ROOM_ID, displayName, isSeated, practiceRoomId } from '../../shared/players';
-  import { BOT_AVATAR_URL, getPlayerAvatarUrl } from '../avatarUtils';
+  import { gameState, roomId, localPlayer } from '../store';
+  import { displayName, isSeated } from '../../shared/players';
+  import { getPlayerAvatarUrl } from '../avatarUtils';
   import { AvatarChoice, MAX_PLAYERS } from '../../shared/types';
-  import type { BotDifficulty } from '../../shared/types';
   import type { Player } from '../../shared/types';
   import { socket } from '../socket';
   import { getAvatarData, getPlayerName } from '../avatarData';
-  import { registerErrorHandler, switchRoom } from '../utils/socketHandlers';
+  import { registerErrorHandler } from '../utils/socketHandlers';
   import { soundEffects } from '../utils/soundEffects';
   import { showToast } from '../utils/toast';
   import SettingsSheet from './SettingsSheet.svelte';
+  import BotsSheet from './BotsSheet.svelte';
   import Icon from './ui/Icon.svelte';
 
   const preferredAvatarOrder = ['Tony', 'Rowan', 'Brad', 'Carol', 'Derek', 'Angela', 'Vanessa', 'Afroditi'];
@@ -36,8 +36,7 @@
   // Intro: tap the logo -> logo burst with flying faces -> logo docks -> seats appear
   // ---------------------------------------------------------------------------
   type IntroStage = 'pending' | 'pending_shrink' | 'splash' | 'dock' | 'seats' | 'done';
-  let introStage: IntroStage = skipNextIntro ? 'done' : 'pending';
-  skipNextIntro = false;
+  let introStage: IntroStage = introPlayed ? 'done' : 'pending';
   const introTimers: ReturnType<typeof setTimeout>[] = [];
   let pendingShrinkFallbackTimer: ReturnType<typeof setTimeout> | null = null;
   /** Safety net if animationend doesn't fire; ~one frame longer than the CSS shrink. */
@@ -86,7 +85,12 @@
     introStage = 'splash';
     introTimers.push(setTimeout(() => (introStage = 'dock'), 3000));
     introTimers.push(setTimeout(() => (introStage = 'seats'), 3700));
-    introTimers.push(setTimeout(() => (introStage = 'done'), 4900));
+    introTimers.push(
+      setTimeout(() => {
+        introStage = 'done';
+        introPlayed = true;
+      }, 4900)
+    );
   }
 
   $: {
@@ -139,7 +143,7 @@
   $: if ($localPlayer && $gameState && !restoredPreferredAvatar) {
     restoredPreferredAvatar = true;
     const preferred = getPreferredAvatarFromCookie();
-    if (preferred && $localPlayer.selectedAvatar === AvatarChoice.UNDEFINED && !ownerOf(preferred)) {
+    if (preferred && $localPlayer.selectedAvatar === AvatarChoice.UNDEFINED && !ownerOf(preferred) && !$gameState.practising?.includes(preferred)) {
       socket.emit('select_avatar', { roomId: $roomId, avatarChoice: preferred });
     }
   }
@@ -152,43 +156,8 @@
   $: anyPersonSeated = players.some((p) => !p.isBot && isSeated(p));
   $: canStart = seatedCount >= 2 && anyPersonSeated;
   $: bots = players.filter((p) => p.isBot);
-  $: isPractice = !!$gameState?.isPractice;
-  $: difficulty = $gameState?.botDifficulty ?? 'medium';
-
-  // ---------------------------------------------------------------------------
-  // Computer players and the practice table
-  // ---------------------------------------------------------------------------
-  const difficulties: { value: BotDifficulty; label: string }[] = [
-    { value: 'easy', label: 'Easy' },
-    { value: 'medium', label: 'Medium' },
-    { value: 'hard', label: 'Hard' }
-  ];
-
-  function addBot() {
-    if (introPlaying) return;
-    if (seatedCount >= MAX_PLAYERS) {
-      showToast(`The table is full — ${MAX_PLAYERS} players max.`);
-      return;
-    }
-    socket.emit('add_bot', { roomId: $roomId });
-  }
-
-  function removeBot(bot: Player) {
-    if (introPlaying) return;
-    socket.emit('remove_bot', { roomId: $roomId, playerId: bot.playerId });
-  }
-
-  function setDifficulty(value: BotDifficulty) {
-    if (introPlaying || value === difficulty) return;
-    socket.emit('set_bot_difficulty', { roomId: $roomId, difficulty: value });
-  }
-
-  function goToTable(id: string) {
-    if (introPlaying) return;
-    skipNextIntro = true;
-    restoredPreferredAvatar = false; // sit back down as yourself at the new table
-    switchRoom(id);
-  }
+  $: difficultyLabel = { easy: 'Easy', medium: 'Medium', hard: 'Hard' }[$gameState?.botDifficulty ?? 'medium'];
+  let botsOpen = false;
   $: target = $gameState?.winningScore ?? 5;
   $: paceLabel = $gameState?.gameSpeed === 'slow' ? 'Relaxed pace' : $gameState?.gameSpeed === 'fast' ? 'Quick pace' : 'Normal pace';
 
@@ -198,9 +167,9 @@
     return ($gameState?.players ?? []).find((p) => p.selectedAvatar === avatarChoice);
   }
 
-  function tileState(avatarChoice: AvatarChoice, _deps: unknown): 'mine' | 'taken' | 'offline' | 'free' {
+  function tileState(avatarChoice: AvatarChoice, _deps: unknown): 'mine' | 'taken' | 'offline' | 'practising' | 'free' {
     const owner = ownerOf(avatarChoice);
-    if (!owner) return 'free';
+    if (!owner) return $gameState?.practising?.includes(avatarChoice) ? 'practising' : 'free';
     if (owner.playerId === $localPlayer?.playerId) return 'mine';
     return owner.disconnected ? 'offline' : 'taken';
   }
@@ -210,6 +179,10 @@
     const state = tileState(avatarChoice, players);
     if (state === 'mine') {
       socket.emit('select_avatar', { roomId: $roomId, avatarChoice: AvatarChoice.UNDEFINED });
+      return;
+    }
+    if (state === 'practising') {
+      showToast(`${getPlayerName(avatarChoice)} is practising against the computer.`);
       return;
     }
     if (state !== 'free') {
@@ -263,9 +236,7 @@
     ? !anyPersonSeated && seatedCount > 0
       ? 'Pick your picture to play'
       : seatedCount === 1
-        ? isPractice
-          ? 'Add a computer player'
-          : 'Waiting for one more player'
+        ? 'Add a player or a computer'
         : 'Waiting for players'
     : `Start game with ${seatedCount} players`;
 
@@ -328,11 +299,9 @@
     </header>
 
     <main class="seats" class:hidden={seatsHidden} aria-labelledby="seats-title">
-      <h1 id="seats-title">{isPractice ? 'Practice table' : "Who's playing?"}</h1>
+      <h1 id="seats-title">Who's playing?</h1>
       <p class="lede">
-        {#if isPractice}
-          {iAmSeated ? `Playing as ${getPlayerName(mySeat)} against the computer.` : 'Tap your picture, then play against the computer.'}
-        {:else if iAmSeated}
+        {#if iAmSeated}
           You're in as {getPlayerName(mySeat)}. Tap your picture again to give up the seat.
         {:else}
           Tap your picture to take a seat at the table.
@@ -349,7 +318,7 @@
                 class="tile {state}"
                 class:unavailable={state === 'free' && tableFull}
                 aria-pressed={state === 'mine'}
-                aria-label="{getPlayerName(choice)}{state === 'mine' ? ', your seat' : state === 'free' ? ', available' : ', taken'}"
+                aria-label="{getPlayerName(choice)}{state === 'mine' ? ', your seat' : state === 'free' ? ', available' : state === 'practising' ? ', practising' : ', taken'}"
                 data-avatar={choice}
                 data-no-button-sound="true"
                 on:click={() => toggleSeat(choice)}
@@ -362,6 +331,8 @@
                     <span class="badge"><Icon name="check" size={14} /> In</span>
                   {:else if state === 'offline'}
                     <span class="badge away"><Icon name="wifi-off" size={13} /> Away</span>
+                  {:else if state === 'practising'}
+                    <span class="badge away">Practising</span>
                   {/if}
                 </span>
                 <span class="name">{getPlayerName(choice)}</span>
@@ -370,46 +341,6 @@
           {/each}
         </ul>
 
-        <section class="bots" aria-labelledby="bots-title">
-          <h2 id="bots-title">Computer players</h2>
-          <ul class="bot-list">
-            {#each bots as bot (bot.playerId)}
-              <li class="bot-chip">
-                <img src={BOT_AVATAR_URL} alt="" />
-                <span>{displayName(bot)}</span>
-                <button type="button" class="bot-remove" aria-label="Remove {displayName(bot)}" on:click={() => removeBot(bot)}>
-                  <Icon name="close" size={16} />
-                </button>
-              </li>
-            {/each}
-            <li>
-              <button type="button" class="bot-add" disabled={seatedCount >= MAX_PLAYERS} on:click={addBot}>
-                <Icon name="plus" size={18} /> Add
-              </button>
-            </li>
-          </ul>
-          {#if bots.length}
-            <div class="difficulty" role="group" aria-label="How well the computer plays">
-              {#each difficulties as d}
-                <button type="button" class:active={difficulty === d.value} aria-pressed={difficulty === d.value} on:click={() => setDifficulty(d.value)}>
-                  {d.label}
-                </button>
-              {/each}
-            </div>
-          {/if}
-        </section>
-
-        <div class="table-switch">
-          {#if isPractice}
-            <button type="button" class="btn btn-ghost" on:click={() => goToTable(FAMILY_ROOM_ID)}>
-              <Icon name="arrow-left" size={18} /> Back to the family table
-            </button>
-          {:else}
-            <button type="button" class="btn btn-ghost" on:click={() => goToTable(practiceRoomId(persistentId))}>
-              Practise on my own
-            </button>
-          {/if}
-        </div>
       {/if}
     </main>
   </div>
@@ -419,10 +350,17 @@
       <div class="rules">
         <span>First to {target} {target === 1 ? 'point' : 'points'}</span>
         <span>{paceLabel}</span>
+        {#if bots.length}
+          <span>{bots.length} computer {bots.length === 1 ? 'player' : 'players'} · {difficultyLabel}</span>
+        {/if}
       </div>
       <div class="dock-row">
         <button class="icon-btn settings-btn" type="button" aria-label="Game settings" disabled={introPlaying} on:click={() => (settingsOpen = true)}>
           <Icon name="settings" />
+        </button>
+        <button class="icon-btn bots-btn" type="button" aria-label="Computer players" disabled={introPlaying} on:click={() => (botsOpen = true)}>
+          <Icon name="robot" />
+          {#if bots.length}<span class="count num">{bots.length}</span>{/if}
         </button>
         <button class="btn btn-primary start-button" type="button" data-no-button-sound="true" disabled={!canStart || introPlaying} on:click={startGame}>
           {startLabel}
@@ -451,6 +389,10 @@
 
   {#if settingsOpen}
     <SettingsSheet context="lobby" on:close={() => (settingsOpen = false)} />
+  {/if}
+
+  {#if botsOpen}
+    <BotsSheet on:close={() => (botsOpen = false)} />
   {/if}
 </div>
 
@@ -602,110 +544,6 @@
     color: var(--ice);
   }
 
-  /* ---------- Computer players ---------- */
-  .bots {
-    margin: 1.6rem auto 0;
-    display: grid;
-    justify-items: center;
-    gap: 0.7rem;
-  }
-  .bots h2 {
-    margin: 0;
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 1.25rem;
-    color: var(--on-felt-muted);
-  }
-  .bot-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 8px;
-  }
-  .bot-chip {
-    display: flex;
-    align-items: center;
-    gap: 0.45rem;
-    padding: 4px 4px 4px 4px;
-    border-radius: 999px;
-    background: rgba(4, 16, 27, 0.45);
-    box-shadow: inset 0 0 0 1.5px rgba(234, 244, 251, 0.18);
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 1.1rem;
-  }
-  .bot-chip img {
-    width: 34px;
-    height: 34px;
-    border-radius: 50%;
-  }
-  .bot-remove {
-    display: grid;
-    place-items: center;
-    width: 32px;
-    height: 32px;
-    border: 0;
-    border-radius: 50%;
-    background: transparent;
-    color: var(--on-felt-muted);
-    cursor: pointer;
-  }
-  .bot-remove:hover {
-    background: rgba(234, 244, 251, 0.12);
-    color: var(--on-felt);
-  }
-  .bot-add {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    height: 42px;
-    padding: 0 1rem 0 0.8rem;
-    border: 1.5px dashed rgba(234, 244, 251, 0.4);
-    border-radius: 999px;
-    background: transparent;
-    color: var(--on-felt);
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 1.1rem;
-    cursor: pointer;
-  }
-  .bot-add:hover:not(:disabled) {
-    border-color: var(--ice);
-    color: var(--ice);
-  }
-  .bot-add:disabled {
-    opacity: 0.45;
-    cursor: default;
-  }
-  .difficulty {
-    display: inline-flex;
-    padding: 4px;
-    border-radius: 999px;
-    background: rgba(4, 16, 27, 0.45);
-  }
-  .difficulty button {
-    min-width: 5.5rem;
-    height: 38px;
-    border: 0;
-    border-radius: 999px;
-    background: transparent;
-    color: var(--on-felt-muted);
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 1.05rem;
-    cursor: pointer;
-  }
-  .difficulty button.active {
-    background: var(--ice);
-    color: var(--ink);
-  }
-  .table-switch {
-    margin-top: 1.4rem;
-  }
-
   /* ---------- Dock ---------- */
   .dock {
     padding: 12px 16px max(16px, env(safe-area-inset-bottom));
@@ -714,13 +552,15 @@
   }
   .rules {
     display: flex;
+    flex-wrap: wrap;
     justify-content: center;
-    gap: 0.5rem;
+    gap: 0.4rem 0.5rem;
     margin-bottom: 0.7rem;
     font-size: 0.88rem;
     color: var(--on-felt-muted);
   }
   .rules span {
+    white-space: nowrap;
     padding: 0.15rem 0.65rem;
     border-radius: 999px;
     background: rgba(4, 16, 27, 0.45);
@@ -732,10 +572,27 @@
     width: min(100%, 460px);
     margin: 0 auto;
   }
-  .settings-btn {
+  .settings-btn,
+  .bots-btn {
+    position: relative;
     width: 48px;
     height: 48px;
     flex: 0 0 auto;
+  }
+  .bots-btn .count {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    display: grid;
+    place-items: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--ice);
+    color: var(--ink);
+    font-size: 0.85rem;
+    line-height: 1;
   }
   .start-button {
     flex: 1;
@@ -948,6 +805,39 @@
   @media (min-width: 760px) {
     .grid {
       gap: 24px 28px;
+    }
+  }
+  /* Landscape (tablets and sideways phones): logo on the left, faces on the right, so everything fits without scrolling. */
+  @media (orientation: landscape) and (min-width: 640px) {
+    .scroll {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: clamp(24px, 5vw, 72px);
+    }
+    .brand {
+      flex: 0 1 34%;
+    }
+    .brand img {
+      width: min(100%, 360px);
+    }
+    .seats {
+      flex: 0 1 620px;
+      margin: 0;
+    }
+    h1 {
+      font-size: clamp(2rem, 7vh, 3rem);
+    }
+    .lede {
+      margin-bottom: clamp(0.8rem, 3vh, 1.4rem);
+    }
+    /* Two rows of faces sized to the height left over beside the dock and heading. */
+    .grid {
+      width: min(100%, calc((100dvh - 420px) * 2));
+      gap: clamp(10px, 2vh, 20px) clamp(12px, 2vw, 24px);
+    }
+    .rules {
+      margin-bottom: 0.5rem;
     }
   }
   @media (max-height: 520px) and (orientation: landscape) {

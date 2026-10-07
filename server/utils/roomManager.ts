@@ -74,6 +74,10 @@ export class RoomManager {
     return room?.players.find(p => p.playerId === playerId);
   }
 
+  allRooms(): GameState[] {
+    return Object.values(this.rooms);
+  }
+
   deleteRoom(roomId: string): void {
     delete this.rooms[roomId];
   }

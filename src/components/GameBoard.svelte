@@ -107,7 +107,7 @@
   // Short "1/2" tallies only when seats are squeezed; otherwise spell out "Won 1 of 2".
   $: textScale = $textSize === 'largest' ? 1.3 : $textSize === 'large' ? 1.15 : 1;
   // Short landscape tablets put each opponent's details beside their avatar (see the CSS), so seats are wider.
-  $: isShortLandscape = viewportW > viewportH && viewportW >= 700 && viewportH >= 521 && viewportH < 700;
+  $: isShortLandscape = viewportW > viewportH && viewportW >= 700 && viewportH >= 521 && viewportH < 800;
   $: seatWidth = isShortLandscape ? 190 : isTablet ? 150 : 95;
   $: compactSeats = opponents.length * seatWidth * textScale > viewportW;
   $: spread = hand.length > 1 ? Math.min(cardW * 0.72, (handWidth - cardW - 36) / (hand.length - 1)) : 0;
@@ -327,7 +327,7 @@
         <span class="round-label num">Round {state.roundNumber}</span>
         <span class="round-meta">
           <span class="round-target">First to {state.winningScore ?? 5}</span>
-          <span class="trumps" title="Hearts are always trumps"><span class="red-suit" aria-hidden="true">♥</span> trumps</span>
+          <span class="trumps" title="Hearts are always trumps"><span role="img" aria-label="Hearts">❤️</span> is trumps</span>
         </span>
       </div>
       <!-- Turn status lives in the shared top bar so it never looks attached to a player's seat. -->
@@ -414,7 +414,7 @@
           </span>
           <button class="btn btn-primary" type="button" on:click={playForAbsent}>Play for {nameOf(absentPlayer)} now</button>
         </div>
-      {:else if announcement}
+      {:else if announcement && !isBiddingLocal}
         <div class="pill-note" transition:fly={{ y: -10, duration: 200 }}>{announcement}</div>
       {/if}
       {#if showTurnReminder}
@@ -551,16 +551,16 @@
   }
   .round-meta {
     display: flex;
-    flex-wrap: wrap;
-    gap: 0 0.6rem;
+    flex-direction: column;
+    gap: 0.1rem;
     font-size: 0.82rem;
     color: var(--on-felt-muted);
   }
   .trumps {
     white-space: nowrap;
   }
-  .trumps .red-suit {
-    font-size: 1.15em;
+  .trumps span {
+    font-size: 0.95em;
   }
   .actions {
     display: flex;
@@ -993,8 +993,8 @@
       width: 100%;
     }
   }
-  /* Shorter landscape tablets (e.g. 16:10 Android): opponents' details beside their avatar to save height. */
-  @media (orientation: landscape) and (min-width: 700px) and (min-height: 521px) and (max-height: 699px) {
+  /* Landscape tablets under 800px tall (e.g. 16:10 Android): opponents' details beside their avatar to save height. */
+  @media (orientation: landscape) and (min-width: 700px) and (min-height: 521px) and (max-height: 799px) {
     .opponents {
       --seat-avatar: 52px;
       width: min(100%, calc(var(--n) * 260px));

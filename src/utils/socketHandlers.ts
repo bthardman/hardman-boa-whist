@@ -29,14 +29,6 @@ function rejoinRoom() {
   socket.emit('join_lobby', { roomId: currentRoomId, playerId: currentPlayerId });
 }
 
-/** Moves this device to another table (family <-> practice). The server frees the old seat. */
-export function switchRoom(nextRoomId: string) {
-  if (get(roomId) === nextRoomId) return;
-  gameState.set(undefined);
-  roomId.set(nextRoomId);
-  rejoinRoom();
-}
-
 /**
  * Registers a handler for a server error event and returns a function that removes it.
  * Events with no registered handler fall back to a toast, so errors are never silent.
@@ -76,6 +68,13 @@ export function setupSocketHandlers() {
     });
   }
 
+  // The server moved this device to another table (a private game against computer players, or back).
+  socket.on('room_changed', (data: { roomId: string }) => {
+    if (get(roomId) === data.roomId) return;
+    roomId.set(data.roomId);
+    rejoinRoom();
+  });
+
   // Room-wide announcements, e.g. "Start cancelled: Carol joined the table."
   socket.on('notice', (data: { message: string }) => showToast(data.message));
 
@@ -107,6 +106,7 @@ export function cleanupSocketHandlers() {
   socket.off('connect');
   socket.off('disconnect');
   socket.off('notice');
+  socket.off('room_changed');
   for (const event of ERROR_EVENTS) socket.off(event);
 
   if (periodicSyncTimer) {

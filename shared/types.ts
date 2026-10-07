@@ -61,6 +61,8 @@ export type GameState = {
   gameSpeed?: GameSpeed; // optional: timing speed preference for round flow
   /** How well the computer players play (default medium). */
   botDifficulty?: BotDifficulty;
+  /** Family table only: faces busy in a private game against computer players. */
+  practising?: AvatarChoice[];
   gameId?: number; // bumped on every new game/reset so stale server timers can be ignored
   roundEndsAt?: number; // epoch ms when the round summary auto-advances
   /** Set while the lobby is counting down to the first deal. */
