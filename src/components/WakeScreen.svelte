@@ -35,7 +35,7 @@
   async function wakeServer() {
     while (!stopped) {
       try {
-        const res = await fetch(`${serverUrl}/health`, { cache: 'no-store' });
+        const res = await fetch(`${serverUrl}/awake`, { cache: 'no-store' });
         if (res.ok && (await res.json())?.ok) return;
       } catch {
         /* still asleep (or offline): try again shortly */

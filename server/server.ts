@@ -70,9 +70,9 @@ const io = new Server(server, {
   }
 });
 
-// A tiny "are you awake?" check. The front end (hosted separately) calls it to wake a sleeping
-// free-tier server and to know when it's ready; Render can also use it as its health check.
-app.get('/health', (req, res) => {
+// A tiny "are you awake?" check. The front end (hosted separately) calls /awake to wake a sleeping
+// free-tier server (ad blockers sometimes block "/health"); Render uses /health as its health check.
+app.get(['/health', '/awake'], (req, res) => {
   const origin = req.headers.origin;
   if (origin && isAllowedOrigin(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
@@ -684,6 +684,7 @@ io.on('connection', (rawSocket) => {
     if (isPracticeRoomId(roomId) && !roomManager.getRoom(roomId)) {
       roomId = FAMILY_ROOM_ID;
       socket.emit('room_changed', { roomId });
+      socket.emit('notice', { message: 'Your game against the computer has ended (the server restarted). You can start a new one.' });
     }
     // Switching tables (family <-> practice): leave the old one first.
     if (socket.data.roomId && socket.data.roomId !== roomId) leaveRoom();
