@@ -4,6 +4,8 @@ import { createGameServer } from './gameServer.ts';
 
 const game = createGameServer({
   corsOrigins: process.env.CORS_ORIGIN,
+  statsUrl: process.env.STATS_URL,
+  statsSecret: process.env.STATS_SECRET,
   abandonedGameMs: process.env.ABANDONED_GAME_MS ? Number(process.env.ABANDONED_GAME_MS) : undefined
 });
 

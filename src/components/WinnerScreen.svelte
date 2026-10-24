@@ -8,7 +8,9 @@
   import { onMount, onDestroy } from 'svelte';
   import { soundEffects } from '../utils/soundEffects';
   import Icon from './ui/Icon.svelte';
+  import StatsSheet from './StatsSheet.svelte';
 
+  let statsOpen = false;
   let confirmMode: 'lobby' | 'rematch' | null = null;
   let stopListening: (() => void) | null = null;
 
@@ -74,8 +76,15 @@
     <div class="actions">
       <button class="btn btn-primary" type="button" on:click={() => (confirmMode = 'rematch')}>Play again</button>
       <button class="btn btn-ghost" type="button" on:click={() => (confirmMode = 'lobby')}>Back to lobby</button>
+      <button class="stats-link" type="button" on:click={() => (statsOpen = true)}>
+        <Icon name="trophy" size={18} /> See everyone's stats
+      </button>
     </div>
   </div>
+
+  {#if statsOpen}
+    <StatsSheet on:close={() => (statsOpen = false)} />
+  {/if}
 
   {#if confirmMode}
     <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
@@ -221,6 +230,22 @@
   }
   .actions .btn {
     padding: 0 0.8rem;
+  }
+  .stats-link {
+    grid-column: 1 / -1;
+    justify-self: center;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 40px;
+    padding: 0 0.6rem;
+    border: 0;
+    background: none;
+    color: var(--ice);
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
   }
 
   /* Landscape: the winner on the left, scores and buttons on the right. */

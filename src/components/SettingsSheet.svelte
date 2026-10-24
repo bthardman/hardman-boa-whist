@@ -2,7 +2,8 @@
   import { createEventDispatcher } from 'svelte';
   import { gameState, roomId } from '../store';
   import { socket } from '../socket';
-  import { fxVolume, musicVolume, turnFlash, textSize } from '../utils/prefs';
+  import { fxVolume, musicVolume, turnFlash, textSize, keepScreenOn } from '../utils/prefs';
+  import { installPlatform, installPrompt, promptInstall } from '../utils/installApp';
   import Icon from './ui/Icon.svelte';
   import type { GameSpeed } from '../../shared/types';
 
@@ -23,6 +24,8 @@
     { value: 'largest', label: 'Largest', preview: '1.25em' }
   ] as const;
   let confirmingDanger = false;
+  const canKeepAwake = 'wakeLock' in navigator;
+  const platform = installPlatform();
 
   $: speed = $gameState?.gameSpeed ?? 'normal';
   $: target = $gameState?.winningScore ?? 5;
@@ -116,7 +119,29 @@
         <input type="checkbox" bind:checked={$turnFlash} />
         <span class="switch" aria-hidden="true"></span>
       </label>
+      {#if canKeepAwake}
+        <label class="toggle">
+          <span>Keep the screen on during games</span>
+          <input type="checkbox" bind:checked={$keepScreenOn} />
+          <span class="switch" aria-hidden="true"></span>
+        </label>
+      {/if}
     </fieldset>
+
+    {#if platform !== 'installed'}
+      <fieldset class="install">
+        <legend>Install as an app <span class="hint">full screen, from your home screen</span></legend>
+        {#if $installPrompt}
+          <button type="button" class="btn btn-ghost btn-block" on:click={promptInstall}>Install Boa-Whist</button>
+        {:else if platform === 'ios'}
+          <p>In Safari, tap the <strong>Share</strong> button, then <strong>Add to Home Screen</strong>.</p>
+        {:else if platform === 'android'}
+          <p>Open the browser menu (<strong>⋮</strong>) and tap <strong>Install app</strong> or <strong>Add to Home screen</strong>.</p>
+        {:else}
+          <p>In Chrome or Edge, click the install icon at the right-hand end of the address bar.</p>
+        {/if}
+      </fieldset>
+    {/if}
 
     {#if member}
       <div class="danger">
@@ -274,6 +299,14 @@
   .toggle input:focus-visible + .switch {
     outline: 3px solid var(--ice-strong);
     outline-offset: 2px;
+  }
+  .install p {
+    clear: both;
+    margin: 0;
+    color: var(--ink-soft);
+  }
+  .install .btn {
+    clear: both;
   }
   .danger {
     padding-top: 0.9rem;

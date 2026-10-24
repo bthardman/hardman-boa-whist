@@ -5,6 +5,8 @@ import {
   persistJinglesVolumePct,
   persistScreenTurnFlash,
   readScreenTurnFlashEnabled,
+  readKeepScreenOn,
+  persistKeepScreenOn,
   readVolumePrefs,
   readTextSize,
   persistTextSize,
@@ -31,6 +33,12 @@ musicVolume.subscribe((v) => {
 });
 turnFlash.subscribe((on) => {
   if (typeof document !== 'undefined') persistScreenTurnFlash(on);
+});
+
+/** Stop the screen going to sleep during a game. */
+export const keepScreenOn = writable(typeof document !== 'undefined' ? readKeepScreenOn() : true);
+keepScreenOn.subscribe((on) => {
+  if (typeof document !== 'undefined') persistKeepScreenOn(on);
 });
 
 const TEXT_SCALE: Record<TextSize, number> = { standard: 1, large: 1.15, largest: 1.3 };

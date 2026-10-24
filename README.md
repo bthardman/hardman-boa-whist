@@ -29,6 +29,8 @@ Each player uses their own phone. Open the link, pick your face, and the server 
 3. Tap your picture on the **Who's playing?** screen. You'll see a **You** badge on your own seat and an **In** badge on everyone else who has joined. Tap your picture again to give up the seat.
 4. When at least two people are seated, anyone with a seat can press **Start game with N players**. There's a 3-second countdown, and anyone can cancel it. It's also cancelled automatically if someone joins, leaves or drops their connection.
 
+**Visitors** who aren't in the family pictures tap **Visiting? Join as a guest** and type their name (up to 16 letters, and not a family member's or a computer player's name). They get a picture made from their initials and play like anyone else. Tap ✕ on your name to give up a guest seat.
+
 > Everyone joins the same table, so there's no room code to share. If you arrive while a game is under way, you **watch it live** (everyone's cards stay hidden) and join the table automatically when it finishes.
 
 ### 2. Bid
@@ -68,7 +70,7 @@ The next round deals automatically after a short pause (or press **Deal round N*
 
 The first player to reach the target score (**5 points** by default) wins. If two or more players reach it on the same round with the same score, play continues until one player is ahead on their own.
 
-When the game ends you can start a rematch with the same players.
+When the game ends you can start a rematch with the same players, or tap **See everyone's stats**.
 
 ## Rules at a glance
 
@@ -88,9 +90,31 @@ Tap **Settings** in the lobby, or ⚙️ during a game.
 
 - **Points to win** (1–5): set in the lobby before the game starts.
 - **Game pace** (Relaxed, Normal, Quick): how long the table pauses between tricks and rounds. Applies to everyone.
-- **Text size**, **sound effects volume**, **music volume** and **flash the screen edge when it's my turn**: these only apply to your own device.
+- **Text size**, **sound effects volume**, **music volume**, **flash the screen edge when it's my turn** and **keep the screen on during games**: these only apply to your own device.
 
 The 📊 button during a game shows the full scoreboard.
+
+**Keep the screen on** (on by default) stops your phone or tablet going to sleep while you're at the table: during a game, on the result screen, and while you're seated in the lobby. A phone that sleeps drops its connection, so this keeps you in the game. It needs a reasonably recent browser (Safari 16.4 or later on iPhone and iPad); where it isn't supported, the setting doesn't appear.
+
+## Install it as an app
+
+The game can sit on your home screen like an app and open full screen, with no browser bar:
+
+- **iPhone or iPad:** open the game in Safari, tap **Share**, then **Add to Home Screen**.
+- **Android:** open the browser menu (⋮) and tap **Install app** (or **Add to Home screen**).
+- **Computer:** in Chrome or Edge, click the install icon at the right-hand end of the address bar.
+
+**Settings** shows these steps for your device, or an **Install Boa-Whist** button where the browser offers one. It's the same game either way; installing just gives it a proper icon and the whole screen.
+
+## Stats and history
+
+Tap **Stats** in the lobby, or **See everyone's stats** after a game.
+
+- **Family:** for each family member, games played, wins and win rate. Tap someone for more: how often they hit their bid exactly, their average bid, how many bids of 0 they made, their best and current winning streaks, and points scored. Every finished game with two or more people counts, with or without computer players.
+- **Practice:** the same, for games played alone against the computer, kept separate so practice doesn't inflate anyone's record.
+- **Recent:** the last 20 finished games: when, who won, and everyone's final score. Guests appear here by name, but don't get stats of their own.
+
+Only games played to the end count. A game that's ended early (**End game**, or everyone leaving) isn't recorded.
 
 ## If someone drops out
 
@@ -116,7 +140,7 @@ Computer players don't cheat: they only know their own hand and what has been pl
 
 ## Running it locally
 
-You'll need [Node.js](https://nodejs.org/) 20 or later.
+You'll need [Node.js](https://nodejs.org/) 22 or later (the stats tests and the local stats API use its built-in SQLite).
 
 ```bash
 npm install
@@ -148,19 +172,31 @@ npm run start-server
 
 Then open http://localhost:3000.
 
+**Stats locally:** the stats normally live on Cloudflare (see Deployment). To try them on your computer, run the same stats code against a local SQLite file (`stats-local.db`):
+
+```bash
+npm run stats-server
+```
+
+Then start the game server pointing at it:
+
+```bash
+STATS_URL=http://localhost:8788 STATS_SECRET=local-stats-secret npm run start-server
+```
+
 ### Tests
 
 ```bash
 npm test
 ```
 
-This runs the rule tests (bidding, tricks, scoring), the server tests (a real server with real connections: joining, watching, taking over a seat, private games, abandoned games, and that nobody can act at a table they're not at), and the computer-player tests. `npm run typecheck` checks the types. GitHub Actions runs both on every push.
+This runs the rule tests (bidding, tricks, scoring), the server tests (a real server with real connections: joining, watching, taking over a seat, guests, private games, abandoned games, finished games reaching the stats, and that nobody can act at a table they're not at), the stats tests (storage, totals, streaks, and that only the game server can record results) and the computer-player tests. `npm run typecheck` checks the types. GitHub Actions runs both on every push.
 
 ### Project layout
 
 | Path | What's there |
 | --- | --- |
-| `server/server.ts` | Starts the server (reads `PORT`, `CORS_ORIGIN`) |
+| `server/server.ts` | Starts the server (reads `PORT`, `CORS_ORIGIN`, `STATS_URL`, `STATS_SECRET`) |
 | `server/gameServer.ts` | Builds the web server and Socket.IO game (used by `server.ts` and the tests) |
 | `server/handlers.ts` | Every message from devices, checked against the seat the device joined as |
 | `server/flow.ts` | The game itself: start countdown, dealing, bids, tricks, scoring |
@@ -168,11 +204,15 @@ This runs the rule tests (bidding, tricks, scoring), the server tests (a real se
 | `server/tables.ts` | The family table, private practice tables, watchers, taking over a seat |
 | `server/view.ts` | What each device is sent (only its own hand) |
 | `server/identity.ts` | Each device's secret token and the public id everyone else sees |
+| `server/stats.ts` | Tallies each round and sends every finished game to the stats API |
 | `server/utils/` | Game rules: dealing, follow-suit and trick winners, bidding rules, scoring |
 | `server/bot/` | Computer players: what each one may see, the Easy/Medium/Hard strategies, and the Monte Carlo search |
 | `shared/types.ts` | Types shared by the client and server |
-| `src/` | Svelte front end (lobby, game board, bidding, scoreboard, settings) |
-| `public/` | Card images, player avatars, fonts and the logo |
+| `shared/stats.ts` | The finished-game record and the stats the app shows |
+| `functions/api/` | The stats API, run by Cloudflare Pages: `POST /api/games` (from the game server) and `GET /api/stats` |
+| `stats/` | Stats storage (Cloudflare D1 / SQLite), plus a local version for tests and `npm run stats-server` |
+| `src/` | Svelte front end (lobby, game board, bidding, scoreboard, settings, stats) |
+| `public/` | Card images, player avatars, fonts, the logo, and the app icons and manifest |
 
 The server is authoritative: it shuffles and deals, validates every bid and card, works out who won each trick, and only sends each player their own hand. Each device proves who it is with a secret token that's never shown to anyone else, so nobody can take over someone's seat or see their cards.
 
@@ -182,7 +222,17 @@ The front end and the game server are hosted separately, both on free plans:
 
 | Part | Where | Settings |
 | --- | --- | --- |
-| Front end (the page you open) | [Cloudflare Pages](https://pages.cloudflare.com/): `hardman-boa-whist.pages.dev` | Build command `npm run build`, output `dist`, build variable `VITE_SOCKET_URL=https://hardman-boa-whist.onrender.com` |
-| Game server | [Render](https://render.com/) web service: `hardman-boa-whist.onrender.com` | Installs dependencies and runs `npm run build`, start `npm run start-server`, `CORS_ORIGIN=https://hardman-boa-whist.pages.dev` (comma-separated; `https://*.hardman-boa-whist.pages.dev` also allows preview builds), health check path `/health` |
+| Front end (the page you open) and stats | [Cloudflare Pages](https://pages.cloudflare.com/): `hardman-boa-whist.pages.dev` | Build command `npm run build`, output `dist`, build variable `VITE_SOCKET_URL=https://hardman-boa-whist.onrender.com`. Stats: a D1 database bound as `DB`, and the secret `STATS_SECRET` |
+| Game server | [Render](https://render.com/) web service: `hardman-boa-whist.onrender.com` | Installs dependencies and runs `npm run build`, start `npm run start-server`, `CORS_ORIGIN=https://hardman-boa-whist.pages.dev` (comma-separated; `https://*.hardman-boa-whist.pages.dev` also allows preview builds), `STATS_URL=https://hardman-boa-whist.pages.dev`, `STATS_SECRET` (the same value as on Cloudflare), health check path `/health` |
 
 Both redeploy automatically when `main` changes. In Render, set **Auto-Deploy** to **After CI checks pass** so a failing build never reaches the live game. A deploy restarts the server, which ends any game in progress, so avoid pushing mid-game. Render's free plan puts the server to sleep after 15 minutes with no traffic (an open game keeps it awake). Because the page itself comes from Cloudflare, it loads instantly and shows its own "waking up" screen while the server starts, calling `/awake` to wake it. The Render address still serves the game too, as a fallback.
+
+**Stats** are stored in a free [Cloudflare D1](https://developers.cloudflare.com/d1/) database, next to the front end. The tables are created automatically the first time a game is saved. When a game finishes, the game server sends the result to `POST /api/games` on the Pages site, signed with `STATS_SECRET` so nobody else can post results; it retries for a while if Cloudflare can't be reached. The app reads `GET /api/stats`. To set it up once:
+
+1. In Cloudflare, go to **Storage & Databases → D1** and create a database (e.g. `boa-whist-stats`).
+2. In the Pages project, go to **Settings → Bindings**, add a **D1 database** binding with the variable name `DB`, and pick that database.
+3. In the Pages project, go to **Settings → Variables and Secrets** and add a secret `STATS_SECRET` set to a long random value.
+4. On Render, add the environment variables `STATS_URL=https://hardman-boa-whist.pages.dev` and `STATS_SECRET` (the same value).
+5. Redeploy the Pages project so the binding and secret take effect.
+
+Without these, the game works as normal and the Stats screen says stats aren't available.

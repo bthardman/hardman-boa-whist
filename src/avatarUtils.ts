@@ -13,12 +13,34 @@ export function botAvatarUrl(botName: string | undefined): string {
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
+/** One background colour per guest, picked from their name, so the same name looks the same each time. */
+const GUEST_COLOURS = ['#3b5bdb', '#0b7285', '#862e9c', '#d6336c', '#2b8a3e', '#e8590c', '#1971c2'];
+
+const escapeXml = (text: string) => text.replace(/[<>&'"]/g, (ch) => `&#${ch.charCodeAt(0)};`);
+
+/** A visitor's picture: their initials (up to two) on a colour picked from their name. */
+export function guestAvatarUrl(name: string): string {
+  const initials = name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => [...word][0].toUpperCase())
+    .join('');
+  let hash = 0;
+  for (const ch of name.toLowerCase()) hash = (hash * 31 + (ch.codePointAt(0) ?? 0)) >>> 0;
+  const bg = GUEST_COLOURS[hash % GUEST_COLOURS.length];
+  const size = initials.length > 1 ? 50 : 62;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><rect width="120" height="120" fill="${bg}"/><text x="60" y="61" text-anchor="middle" dominant-baseline="central" font-family="'Arial Narrow', Arial, sans-serif" font-weight="700" font-size="${size}" fill="#f4f8fb">${escapeXml(initials)}</text></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
 /**
- * A player's picture: a robot for computer players, otherwise the family member's photo.
+ * A player's picture: a robot for computer players, initials for guests, otherwise the family member's photo.
  * `frame` picks between each person's two photos (seats alternate them; see avatarFrame).
  */
 export function getPlayerAvatarUrl(player: Player, frame: AvatarFrame = 1): string {
   if (player.isBot) return botAvatarUrl(player.botName);
+  if (player.guestName) return guestAvatarUrl(player.guestName);
   const data = getAvatarData(player.selectedAvatar);
   return frame === 2 ? data.avatar2 : data.avatar1;
 }

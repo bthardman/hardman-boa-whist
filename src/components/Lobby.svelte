@@ -13,6 +13,8 @@
   import { showToast } from '../utils/toast';
   import SettingsSheet from './SettingsSheet.svelte';
   import BotsSheet from './BotsSheet.svelte';
+  import GuestSheet from './GuestSheet.svelte';
+  import StatsSheet from './StatsSheet.svelte';
   import Icon from './ui/Icon.svelte';
 
   const preferredAvatarOrder = ['Tony', 'Rowan', 'Brad', 'Carol', 'Derek', 'Angela', 'Vanessa', 'Afroditi'];
@@ -27,6 +29,8 @@
   );
 
   let settingsOpen = false;
+  let guestOpen = false;
+  let statsOpen = false;
 
   // ---------------------------------------------------------------------------
   // Intro: tap the logo -> logo burst with flying faces -> logo docks -> seats appear
@@ -135,11 +139,12 @@
     return avatarChoices.includes(value) ? value : null;
   }
 
-  // Sit back down as the person you last played as, if that seat is free.
+  // Sit back down as the person you last played as, if that seat is free (not for guests).
   $: if ($localPlayer && $gameState && !restoredPreferredAvatar) {
     restoredPreferredAvatar = true;
     const preferred = getPreferredAvatarFromCookie();
-    if (preferred && $localPlayer.selectedAvatar === AvatarChoice.UNDEFINED && !ownerOf(preferred) && !$gameState.practising?.includes(preferred)) {
+    const unseated = $localPlayer.selectedAvatar === AvatarChoice.UNDEFINED && !$localPlayer.guestName;
+    if (preferred && unseated && !ownerOf(preferred) && !$gameState.practising?.includes(preferred)) {
       socket.emit('select_avatar', { roomId: $roomId, avatarChoice: preferred });
     }
   }
@@ -147,7 +152,9 @@
   $: players = $gameState?.players ?? [];
   $: seatedCount = players.filter(isSeated).length;
   $: mySeat = $localPlayer?.selectedAvatar ?? AvatarChoice.UNDEFINED;
-  $: iAmSeated = mySeat !== AvatarChoice.UNDEFINED;
+  $: myGuestName = $localPlayer?.guestName;
+  $: iAmSeated = !!$localPlayer && isSeated($localPlayer);
+  $: guests = players.filter((p) => p.guestName);
   $: tableFull = seatedCount >= MAX_PLAYERS && !iAmSeated;
   $: anyPersonSeated = players.some((p) => !p.isBot && isSeated(p));
   $: canStart = seatedCount >= 2 && anyPersonSeated && iAmSeated;
@@ -194,6 +201,19 @@
     soundEffects.playAvatarSelect();
   }
 
+  function openGuestSheet() {
+    if (introPlaying) return;
+    if (tableFull) {
+      showToast(`The table is full — ${MAX_PLAYERS} players max.`);
+      return;
+    }
+    guestOpen = true;
+  }
+
+  function leaveGuestSeat() {
+    socket.emit('select_avatar', { roomId: $roomId, avatarChoice: AvatarChoice.UNDEFINED });
+  }
+
   function startGame() {
     if (introPlaying || !canStart || countdown) return;
     socket.emit('start_game', { roomId: $roomId });
@@ -212,7 +232,7 @@
     countdownId = countdown.id;
     countdownStartedAt = Date.now(); // local clock, so phones with the wrong time still count properly
     countdownNow = countdownStartedAt;
-    settingsOpen = false;
+    settingsOpen = guestOpen = statsOpen = false;
     soundEffects.playGameStart();
     if (countdownTimer) clearInterval(countdownTimer);
     countdownTimer = setInterval(() => (countdownNow = Date.now()), 100);
@@ -252,7 +272,7 @@
   });
 </script>
 
-<div class="lobby stage-{introStage}">
+<div class="lobby stage-{introStage}" style="--guest-row: {guests.length ? '3.6rem' : '0px'}">
   {#if introStage === 'pending' || introStage === 'pending_shrink'}
     <div class="intro-layer">
       <button
@@ -297,10 +317,16 @@
     <main class="seats" class:hidden={seatsHidden} aria-labelledby="seats-title">
       <h1 id="seats-title">Who's playing?</h1>
       <p class="lede">
-        {#if iAmSeated}
+        {#if myGuestName}
+          You're in as {myGuestName}.
+        {:else if iAmSeated}
           You're in as {getPlayerName(mySeat)}. Tap your picture again to give up the seat.
         {:else}
-          Tap your picture to take a seat at the table.
+          Tap your picture to take a seat.
+          <!-- Once guests are seated, this moves to the end of their row (saves a line on small phones). -->
+          {#if !guests.length}
+            <button type="button" class="link" on:click={openGuestSheet}>Visiting? Join as a guest</button>
+          {/if}
         {/if}
       </p>
 
@@ -337,6 +363,27 @@
           {/each}
         </ul>
 
+        {#if guests.length}
+          <ul class="guests" aria-label="Guests">
+            {#each guests as g (g.playerId)}
+              {@const mine = g.playerId === $localPlayer?.playerId}
+              <li class="guest-chip" class:mine class:away={g.disconnected}>
+                <img src={getPlayerAvatarUrl(g)} alt="" />
+                <span>{mine ? `${g.guestName} (you)` : g.guestName}</span>
+                {#if mine}
+                  <button type="button" class="leave" aria-label="Give up your seat" on:click={leaveGuestSeat}><Icon name="x" size={14} /></button>
+                {:else if g.disconnected}
+                  <Icon name="wifi-off" size={13} />
+                {/if}
+              </li>
+            {/each}
+            {#if !iAmSeated}
+              <li>
+                <button type="button" class="guest-chip add" on:click={openGuestSheet}><Icon name="plus" size={16} /> Join as a guest</button>
+              </li>
+            {/if}
+          </ul>
+        {/if}
       {/if}
     </main>
 
@@ -346,8 +393,11 @@
           <Icon name="settings" size={20} /> Settings
         </button>
         <button class="btn btn-ghost bots-btn" type="button" disabled={introPlaying} on:click={() => (botsOpen = true)}>
-          <Icon name="robot" size={20} /> Computer players
+          <Icon name="robot" size={20} /> <span class="label-long">Computer players</span><span class="label-short">Computers</span>
           {#if bots.length}<span class="count num">{bots.length}</span>{/if}
+        </button>
+        <button class="btn btn-ghost" type="button" disabled={introPlaying} on:click={() => (statsOpen = true)}>
+          <Icon name="trophy" size={20} /> Stats
         </button>
       </div>
     {/if}
@@ -395,6 +445,14 @@
   {#if botsOpen}
     <BotsSheet on:close={() => (botsOpen = false)} />
   {/if}
+
+  {#if guestOpen}
+    <GuestSheet on:close={() => (guestOpen = false)} />
+  {/if}
+
+  {#if statsOpen}
+    <StatsSheet on:close={() => (statsOpen = false)} />
+  {/if}
 </div>
 
 <style>
@@ -440,10 +498,21 @@
     max-width: 34ch;
     color: var(--on-felt-muted);
   }
+  .link {
+    padding: 0.15rem 0;
+    border: 0;
+    background: none;
+    color: var(--ice);
+    font-weight: 700;
+    white-space: nowrap;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+  }
   .grid {
     list-style: none;
-    /* Keep both rows on screen on short laptop displays. */
-    width: min(100%, max(320px, calc((100dvh - 400px) * 1.45)));
+    /* Keep both rows on screen on short phones and laptops, at any text size (and leave room for any guests). */
+    width: min(100%, max(240px, calc((100dvh - 25rem - var(--guest-row) * 1.4) * 1.45)));
     margin: 0 auto;
     padding: 0;
     display: grid;
@@ -534,15 +603,86 @@
     background: #5d7186;
     color: var(--on-felt);
   }
+  .grid li {
+    container-type: inline-size;
+  }
   .name {
     margin-top: 0.35rem;
     font-family: var(--font-display);
     font-weight: 700;
     font-size: clamp(1.05rem, 3.6vw, 1.35rem);
+    /* Never wider than the face, so names don't run together when the faces shrink to fit. */
+    font-size: min(clamp(1.05rem, 3.6vw, 1.35rem), 28cqi);
     line-height: 1.1;
   }
   .tile.mine .name {
     color: var(--ice);
+  }
+
+  /* ---------- Guests ---------- */
+  .guests {
+    list-style: none;
+    margin: 1rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+  }
+  .guest-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 40px;
+    padding: 4px 12px 4px 4px;
+    border-radius: 999px;
+    background: rgba(4, 16, 27, 0.45);
+    box-shadow: inset 0 0 0 1.5px rgba(234, 244, 251, 0.3);
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.15rem;
+    line-height: 1;
+  }
+  .guest-chip img {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+  }
+  .guest-chip.mine {
+    padding-right: 4px;
+    box-shadow: inset 0 0 0 2px var(--ice);
+    color: var(--ice);
+  }
+  .guest-chip.away {
+    color: var(--on-felt-muted);
+  }
+  .guest-chip.away img {
+    filter: grayscale(1) brightness(0.7);
+  }
+  .guest-chip.add {
+    padding: 4px 14px 4px 10px;
+    border: 1.5px dashed rgba(143, 221, 251, 0.6);
+    box-shadow: none;
+    background: transparent;
+    color: var(--ice);
+    cursor: pointer;
+  }
+  .guest-chip.add:hover {
+    background: rgba(143, 221, 251, 0.12);
+  }
+  .leave {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(143, 221, 251, 0.18);
+    color: var(--ice);
+    cursor: pointer;
+  }
+  .leave:hover {
+    background: rgba(143, 221, 251, 0.32);
   }
 
   /* ---------- Dock ---------- */
@@ -813,20 +953,63 @@
       gap: 24px 28px;
     }
   }
-  /* Narrow phones: both buttons on one row; the button already shows how many computer players. */
+  .label-short {
+    display: none;
+  }
+  /* Narrow phones: the three buttons on one row, with the short label for computer players
+     (the button already shows how many there are). */
   @media (max-width: 520px) {
     .controls {
       flex-wrap: nowrap;
       gap: 8px;
     }
     .controls .btn {
-      min-height: 42px;
-      padding: 0 0.75rem;
-      gap: 0.35rem;
-      font-size: 1rem;
+      position: relative;
+      min-height: 44px;
+      padding: 0 0.7rem;
+      gap: 0.3rem;
+      font-size: 0.95rem;
     }
+    .bots-btn .count {
+      position: absolute;
+      top: -7px;
+      right: -7px;
+    }
+    .label-long,
     .bots-pill {
       display: none;
+    }
+    .label-short {
+      display: inline;
+    }
+  }
+  /* Short phones (e.g. iPhone SE): a smaller logo and tighter spacing, so the faces keep their size. */
+  @media (orientation: portrait) and (max-height: 760px) {
+    .brand img {
+      width: 140px;
+    }
+    .seats {
+      margin-top: 0.5rem;
+    }
+    h1 {
+      font-size: 2rem;
+    }
+    .lede {
+      margin-bottom: 0.8rem;
+    }
+    .guests {
+      margin-top: 0.6rem;
+    }
+    .guest-chip {
+      min-height: 36px;
+      font-size: 1.05rem;
+    }
+    .guest-chip img {
+      width: 28px;
+      height: 28px;
+    }
+    .controls {
+      margin-top: 0.9rem;
     }
   }
 
@@ -873,7 +1056,7 @@
     }
     /* Two rows of faces sized to the height left over beside the dock and heading. */
     .grid {
-      width: min(100%, calc((100dvh - 420px) * 2));
+      width: min(100%, calc((100dvh - 420px - var(--guest-row)) * 2));
       gap: clamp(10px, 2vh, 20px) clamp(12px, 2vw, 24px);
     }
     .rules {
@@ -893,6 +1076,39 @@
     }
     .lede {
       margin-bottom: 0.8rem;
+    }
+  }
+  /* Sideways phones: the three buttons side by side under the logo, icon above the label. */
+  @media (orientation: landscape) and (max-height: 520px) {
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      width: min(100%, 420px);
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .controls .btn {
+      position: relative;
+      flex-direction: column;
+      gap: 0.1rem;
+      min-width: 0;
+      min-height: 54px;
+      padding: 0.35rem 0.3rem;
+      border-radius: 16px;
+      font-size: 1rem;
+      line-height: 1.05;
+    }
+    .bots-btn .count {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+    }
+    .label-long {
+      display: none;
+    }
+    .label-short {
+      display: inline;
     }
   }
 </style>

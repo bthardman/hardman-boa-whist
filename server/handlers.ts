@@ -3,7 +3,7 @@
 import type { Socket } from 'socket.io';
 import type { BotDifficulty, EmoteId, GameState, OwnedCard, Player } from '../shared/types.ts';
 import { AvatarChoice, EMOTES, MAX_PLAYERS } from '../shared/types.ts';
-import { FAMILY_ROOM_ID, isPracticeRoomId, isSeated } from '../shared/players.ts';
+import { FAMILY_ROOM_ID, MAX_GUEST_NAME_LENGTH, cleanGuestName, isPracticeRoomId, isSeated } from '../shared/players.ts';
 import type { Ctx, GameSocket } from './context.ts';
 import { isValidRoomId, isValidToken, publicIdFor } from './identity.ts';
 import { applyBid, applyPlay, beginGame, beginStartCountdown, cancelStartCountdown, isActive, resetGame, startNextRound, startProblem } from './flow.ts';
@@ -135,10 +135,12 @@ export function registerSocketHandlers(ctx: Ctx, rawSocket: Socket): void {
     const { room, player } = seat;
     if (room.state !== 'lobby' && room.state !== 'winner') return;
 
+    // Giving up your seat (a face, or a guest seat).
     if (!avatarChoice || avatarChoice === AvatarChoice.UNDEFINED) {
-      if (player.selectedAvatar === AvatarChoice.UNDEFINED) return;
+      if (!isSeated(player)) return;
       cancelStartCountdown(ctx, room, `Start cancelled: ${nameOf(player)} left their seat.`);
       player.selectedAvatar = AvatarChoice.UNDEFINED;
+      player.guestName = undefined;
       broadcastState(ctx, room);
       return;
     }
@@ -159,7 +161,36 @@ export function registerSocketHandlers(ctx: Ctx, rawSocket: Socket): void {
     }
     if (player.selectedAvatar === choice) return;
     player.selectedAvatar = choice;
+    player.guestName = undefined;
     cancelStartCountdown(ctx, room, `Start cancelled: ${nameOf(player)} joined the table.`);
+    broadcastState(ctx, room);
+  });
+
+  // --- Visitors: join under a name instead of a family face ---
+  on<RoomPayload & { name: unknown }>('join_as_guest', ({ roomId, name }) => {
+    const seat = currentSeat(roomId);
+    if (!seat) return;
+    const { room, player } = seat;
+    if (room.state !== 'lobby' && room.state !== 'winner') return;
+    const guestName = cleanGuestName(name);
+    if (!guestName) {
+      socket.emit('avatar_selection_error', {
+        message: `Pick a name of up to ${MAX_GUEST_NAME_LENGTH} letters (family members: tap your picture instead).`
+      });
+      return;
+    }
+    if (room.players.some((p) => p !== player && p.guestName?.toLowerCase() === guestName.toLowerCase())) {
+      socket.emit('avatar_selection_error', { message: `Someone is already playing as ${guestName}.` });
+      return;
+    }
+    if (!isSeated(player) && room.players.filter(isSeated).length >= MAX_PLAYERS) {
+      socket.emit('avatar_selection_error', { message: `The table is full — ${MAX_PLAYERS} players max.` });
+      return;
+    }
+    if (player.guestName === guestName && player.selectedAvatar === AvatarChoice.UNDEFINED) return;
+    player.guestName = guestName;
+    player.selectedAvatar = AvatarChoice.UNDEFINED;
+    cancelStartCountdown(ctx, room, `Start cancelled: ${guestName} joined the table.`);
     broadcastState(ctx, room);
   });
 

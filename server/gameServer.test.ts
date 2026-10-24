@@ -4,9 +4,16 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { io as connect, type Socket } from 'socket.io-client';
 import { randomUUID } from 'crypto';
 import type { GameState } from '../shared/types.ts';
+import type { GameRecord } from '../shared/stats.ts';
 import { FAMILY_ROOM_ID, practiceRoomId } from '../shared/players.ts';
 import { createGameServer, type GameServer, type GameServerOptions } from './gameServer.ts';
 import { publicIdFor } from './identity.ts';
+
+// The local stats API needs Node's built-in SQLite (Node 22+).
+const localStats = await import('../stats/localServer.ts').catch(() => null);
+
+/** Long enough for a whole game to 1 point (it can take several rounds if nobody hits their bid). */
+const FULL_GAME_TIMEOUT_MS = 20_000;
 
 const FAST: GameServerOptions = {
   lobbySeatGraceMs: 200,
@@ -93,6 +100,28 @@ async function device(url: string, opts: { token?: string; roomId?: string | nul
 
 const seatedAs = (c: Client, avatar: string) =>
   c.until((s) => s.players.some((p) => p.playerId === c.id && p.selectedAvatar === avatar), `${avatar} seated`);
+
+/**
+ * Plays this device's turns automatically: a bid of 1 (or 2 if 1 is the forbidden number for the
+ * last bidder), then the first card it's allowed to play.
+ */
+function autoPlay(c: Client) {
+  c.socket.on('state_updated', (s: GameState) => {
+    const me = s.players.findIndex((p) => p.playerId === c.id);
+    if (me < 0 || s.currentPlayer !== me) return;
+    if (s.state === 'bidding' && typeof s.players[me].bid !== 'number') {
+      const others = s.players.filter((p, i) => i !== me);
+      const isLast = others.every((p) => typeof p.bid === 'number');
+      const total = others.reduce((sum, p) => sum + (p.bid ?? 0), 0);
+      c.emit('submit_bid', { roomId: s.roomId, bid: isLast && total + 1 === 7 ? 2 : 1 });
+    } else if (s.state === 'tricks' && s.currentTrick.length < s.players.length) {
+      const hand = s.players[me].hand;
+      const led = s.currentTrick[0]?.card.suit;
+      const card = (led && hand.find((h) => h.card.suit === led)) || hand[0];
+      if (card) c.emit('playCard', { roomId: s.roomId, card });
+    }
+  });
+}
 
 /** Two people at the family table, game dealt. */
 async function familyGame(url: string) {
@@ -295,6 +324,115 @@ describe('game server', () => {
     const state = await brad.until((s) => s.state === 'bidding', 'rematch dealt');
     expect(state.players.some((p) => p.playerId === rowan.id)).toBe(false);
   });
+
+  it('lets visitors join under a name (not a family name, not one already in use)', async () => {
+    const { url } = await startServer();
+    const brad = await device(url);
+    const visitor = await device(url);
+    const other = await device(url);
+
+    const refused = visitor.event<{ message: string }>('avatar_selection_error');
+    visitor.emit('join_as_guest', { roomId: FAMILY_ROOM_ID, name: 'brad' });
+    expect((await refused).message).toMatch(/up to 16 letters/);
+    const notABot = visitor.event<{ message: string }>('avatar_selection_error');
+    visitor.emit('join_as_guest', { roomId: FAMILY_ROOM_ID, name: 'Player 3' });
+    expect((await notABot).message).toMatch(/up to 16 letters/);
+
+    visitor.emit('join_as_guest', { roomId: FAMILY_ROOM_ID, name: '  Sam  ' });
+    const seen = await brad.until((st) => st.players.some((p) => p.guestName === 'Sam'), 'guest seated');
+    expect(seen.players.find((p) => p.playerId === visitor.id)?.selectedAvatar).toBe('undefined');
+
+    const taken = other.event<{ message: string }>('avatar_selection_error');
+    other.emit('join_as_guest', { roomId: FAMILY_ROOM_ID, name: 'SAM' });
+    expect((await taken).message).toMatch(/already playing as SAM/);
+
+    // Picking a face replaces the guest name; giving up the seat clears both.
+    visitor.emit('select_avatar', { roomId: FAMILY_ROOM_ID, avatarChoice: 'carol' });
+    await brad.until((st) => st.players.some((p) => p.playerId === visitor.id && p.selectedAvatar === 'carol' && !p.guestName), 'now Carol');
+    visitor.emit('select_avatar', { roomId: FAMILY_ROOM_ID, avatarChoice: 'undefined' });
+    await brad.until((st) => st.players.some((p) => p.playerId === visitor.id && p.selectedAvatar === 'undefined' && !p.guestName), 'seat given up');
+  });
+
+  it('reports each finished family game for stats, with a guest playing', async () => {
+    const records: GameRecord[] = [];
+    const { url } = await startServer({ ...FAST, reportGame: (r) => records.push(r) });
+    const brad = await device(url);
+    const visitor = await device(url);
+    brad.emit('select_avatar', { roomId: FAMILY_ROOM_ID, avatarChoice: 'brad' });
+    visitor.emit('join_as_guest', { roomId: FAMILY_ROOM_ID, name: 'Sam' });
+    await seatedAs(brad, 'brad');
+    await brad.until((st) => st.players.some((p) => p.guestName === 'Sam'));
+    brad.emit('set_winning_score', { roomId: FAMILY_ROOM_ID, winningScore: 1 });
+    await brad.until((st) => st.winningScore === 1);
+    autoPlay(brad);
+    autoPlay(visitor);
+    brad.emit('start_game', { roomId: FAMILY_ROOM_ID });
+    const end = await brad.until((st) => st.state === 'winner', 'the end of the game', FULL_GAME_TIMEOUT_MS - 1000);
+
+    expect(records).toHaveLength(1);
+    const record = records[0];
+    expect(record).toMatchObject({ kind: 'family', winningScore: 1, botDifficulty: null, rounds: end.roundNumber });
+    expect(record.players.map((p) => [p.key, p.kind, p.name])).toEqual([
+      ['brad', 'family', 'Brad'],
+      ['guest:sam', 'guest', 'Sam']
+    ]);
+    const winner = record.players.find((p) => p.place === 1)!;
+    expect(record.winnerKey).toBe(winner.key);
+    expect(winner.score).toBe(1);
+    for (const p of record.players) {
+      expect(p.roundsMade).toBe(p.score); // a point for every exact bid
+      expect(p.bidTotal).toBeGreaterThanOrEqual(record.rounds); // everyone bid at least 1 each round
+    }
+  }, FULL_GAME_TIMEOUT_MS);
+
+  it('reports a solo game against the computer as practice', async () => {
+    const records: GameRecord[] = [];
+    const { url } = await startServer({ ...FAST, reportGame: (r) => records.push(r) });
+    const brad = await device(url);
+    brad.emit('select_avatar', { roomId: FAMILY_ROOM_ID, avatarChoice: 'brad' });
+    await seatedAs(brad, 'brad');
+    brad.emit('add_bot', { roomId: FAMILY_ROOM_ID });
+    brad.emit('set_winning_score', { roomId: FAMILY_ROOM_ID, winningScore: 1 });
+    await brad.until((st) => st.winningScore === 1 && st.players.some((p) => p.isBot));
+    autoPlay(brad);
+    brad.emit('start_game', { roomId: FAMILY_ROOM_ID });
+    await brad.until((st) => st.state === 'winner', 'the end of the practice game', FULL_GAME_TIMEOUT_MS - 1000);
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ kind: 'practice', botDifficulty: 'medium' });
+    expect(records[0].players.map((p) => p.key)).toEqual(['brad', 'bot:Player 2']);
+  }, FULL_GAME_TIMEOUT_MS);
+
+  it.skipIf(!localStats)('stores finished games in the stats API and serves them back through /api/stats', async () => {
+    const statsApi = await localStats!.startLocalStatsServer({ secret: 'test-secret' });
+    try {
+      const { url } = await startServer({ ...FAST, statsUrl: statsApi.url, statsSecret: 'test-secret' });
+      const brad = await device(url);
+      const rowan = await device(url);
+      brad.emit('select_avatar', { roomId: FAMILY_ROOM_ID, avatarChoice: 'brad' });
+      rowan.emit('select_avatar', { roomId: FAMILY_ROOM_ID, avatarChoice: 'rowan' });
+      await seatedAs(brad, 'brad');
+      await seatedAs(rowan, 'rowan');
+      brad.emit('set_winning_score', { roomId: FAMILY_ROOM_ID, winningScore: 1 });
+      await brad.until((st) => st.winningScore === 1);
+      autoPlay(brad);
+      autoPlay(rowan);
+      brad.emit('start_game', { roomId: FAMILY_ROOM_ID });
+      await brad.until((st) => st.state === 'winner', 'the end of the game', FULL_GAME_TIMEOUT_MS - 1000);
+
+      let stats: { people: { key: string; family: { games: number; wins: number } | null }[]; recent: unknown[] } | null = null;
+      for (let i = 0; i < 50 && !stats?.recent.length; i++) {
+        await sleep(50);
+        stats = await (await fetch(`${url}/api/stats`)).json();
+      }
+      expect(stats!.recent).toHaveLength(1);
+      const people = Object.fromEntries(stats!.people.map((p) => [p.key, p.family]));
+      expect(people.brad!.games).toBe(1);
+      expect(people.rowan!.games).toBe(1);
+      expect(people.brad!.wins + people.rowan!.wins).toBe(1);
+    } finally {
+      await statsApi.close();
+    }
+  }, FULL_GAME_TIMEOUT_MS);
 
   it("keeps a lobby seat for someone who reconnects and drops again (the old timer doesn't remove them early)", async () => {
     const { url } = await startServer({ ...FAST, lobbySeatGraceMs: 1000 });

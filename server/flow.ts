@@ -10,6 +10,7 @@ import { calculateRoundScores, checkGameEnd, checkRoundEnd, findGameWinner, upda
 import { isValidBid } from './utils/biddingRules.ts';
 import { broadcastState, notifyRoom } from './view.ts';
 import { moveSoloGameToPrivateTable } from './tables.ts';
+import { emptyTally, reportFinishedGame, tallyRound } from './stats.ts';
 
 /** A game is under way (cards dealt and not yet won). */
 export function isActive(room: GameState): boolean {
@@ -60,6 +61,7 @@ export function startNextRound(ctx: Ctx, room: GameState, isInitialStart = false
 }
 
 function finishRoundAndAdvanceOrEnd(ctx: Ctx, room: GameState): void {
+  tallyRound(ctx, room);
   updateTotalScores(room, calculateRoundScores(room));
 
   if (checkGameEnd(room)) {
@@ -67,6 +69,7 @@ function finishRoundAndAdvanceOrEnd(ctx: Ctx, room: GameState): void {
     if (winner) {
       room.winner = winner;
       GameStateMachine.transition(room, 'winner');
+      reportFinishedGame(ctx, room);
     }
     broadcastState(ctx, room);
     return;
@@ -100,6 +103,7 @@ export function resetGame(ctx: Ctx, room: GameState): void {
   room.absentTurnDeadline = undefined;
   room.scoreboard = {};
   ctx.roundLogs.delete(room.roomId);
+  ctx.tallies.delete(room.roomId);
   room.players.forEach((p) => {
     p.hand = [];
     p.tricksWon = 0;
@@ -145,6 +149,7 @@ export function beginGame(ctx: Ctx, room: GameState): string | null {
   const problem = startProblem(ctx, room);
   if (problem) return problem;
   moveSpectatorsToWatching(ctx, room);
+  ctx.tallies.set(room.roomId, room.players.map(emptyTally));
   startNextRound(ctx, room, true);
   return null;
 }

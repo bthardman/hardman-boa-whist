@@ -2,6 +2,8 @@ const COOKIE_CARDS = 'boa_whist_cardsVolume';
 const COOKIE_JINGLES = 'boa_whist_jinglesVolume';
 const COOKIE_SCREEN_FLASH = 'boa_whist_screenTurnFlash';
 const COOKIE_TEXT_SIZE = 'boa_whist_textSize';
+const COOKIE_KEEP_SCREEN_ON = 'boa_whist_keepScreenOn';
+const COOKIE_GUEST_NAME = 'boa_whist_guestName';
 
 /** Legacy keys — migrated into cookies on read. */
 const LS_CARDS = 'cardsVolume';
@@ -87,6 +89,25 @@ export function readScreenTurnFlashEnabled(): boolean {
 
 export function persistScreenTurnFlash(enabled: boolean): void {
   setClientCookie(COOKIE_SCREEN_FLASH, enabled ? '1' : '0');
+}
+
+/** Keep the screen on during games: on unless turned off. */
+export function readKeepScreenOn(): boolean {
+  const raw = getClientCookie(COOKIE_KEEP_SCREEN_ON);
+  return raw !== '0';
+}
+
+export function persistKeepScreenOn(enabled: boolean): void {
+  setClientCookie(COOKIE_KEEP_SCREEN_ON, enabled ? '1' : '0');
+}
+
+/** The name this device last joined under as a guest (to fill in next time). */
+export function readGuestName(): string | null {
+  return getClientCookie(COOKIE_GUEST_NAME);
+}
+
+export function persistGuestName(name: string): void {
+  setClientCookie(COOKIE_GUEST_NAME, name);
 }
 
 export type TextSize = 'standard' | 'large' | 'largest';

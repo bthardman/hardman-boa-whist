@@ -41,6 +41,8 @@ export type Player = {
   isBot?: boolean;
   /** "Player 2", "Player 3"… shown instead of an avatar name for bots. */
   botName?: string;
+  /** A visitor playing under the name they typed (no family face). */
+  guestName?: string;
 };
 
 export type State = 'lobby' | 'bidding' | 'tricks' | 'round_end' | 'winner';

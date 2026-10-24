@@ -1,12 +1,15 @@
 <script lang="ts">
-  import { gameState, localSocketId } from './store';
+  import { gameState, localSocketId, localPlayer } from './store';
+  import { isSeated } from '../shared/players';
   import Lobby from './components/Lobby.svelte';
   import GameBoard from './components/GameBoard.svelte';
   import WinnerScreen from './components/WinnerScreen.svelte';
   import WakeScreen from './components/WakeScreen.svelte';
   import { soundEffects } from './utils/soundEffects';
   import { toasts } from './utils/toast';
-  import './utils/prefs'; // applies the saved text size before anything renders
+  import { keepScreenOn } from './utils/prefs'; // also applies the saved text size before anything renders
+  import { retryKeepAwake, setKeepAwake } from './utils/wakeLock';
+  import './utils/installApp'; // catches the browser's install offer, which comes once, early
   import { onMount, onDestroy } from 'svelte';
   import { fly } from 'svelte/transition';
   import { setupSocketHandlers, cleanupSocketHandlers, registerErrorHandler } from './utils/socketHandlers';
@@ -18,10 +21,15 @@
   $: if ($localSocketId) everConnected = true;
   $: phase = $gameState?.state;
   $: inGame = phase === 'bidding' || phase === 'tricks' || phase === 'round_end';
+  // Keep the screen on while at the table (playing, watching, the result, or seated in the lobby),
+  // so a phone doesn't go to sleep and drop out of the game.
+  $: atTable = inGame || phase === 'winner' || (phase === 'lobby' && !!$localPlayer && isSeated($localPlayer));
+  $: setKeepAwake($keepScreenOn && atTable);
 
   function onDocumentClick(event: MouseEvent) {
     // Browsers only allow sound after a tap: the first one switches audio on.
     soundEffects.unlock();
+    retryKeepAwake();
     const target = event.target;
     if (!(target instanceof Element)) return;
     const button = target.closest('button');

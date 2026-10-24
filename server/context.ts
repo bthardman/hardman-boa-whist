@@ -2,6 +2,8 @@
 // One context per server, so tests can run several isolated servers with tiny timings.
 import type { Server, Socket } from 'socket.io';
 import type { RoundLogEntry } from './bot/index.ts';
+import type { GameRecord } from '../shared/stats.ts';
+import type { SeatTally } from './stats.ts';
 import { RoomManager } from './utils/roomManager.ts';
 
 export type Timings = {
@@ -54,6 +56,10 @@ export type Ctx = {
   botTurns: Map<string, string>;
   practiceCleanupTimers: Map<string, Timer>;
   abandonTimers: Map<string, Timer>;
+  /** Each seat's running totals for the game in progress, per room (for stats). */
+  tallies: Map<string, SeatTally[]>;
+  /** Where finished games are sent for stats (unset: stats are off, e.g. local play). */
+  reportGame?: (record: GameRecord) => void;
   /** setTimeout that the server can cancel all at once when it shuts down. */
   setTimer(fn: () => void, ms: number): Timer;
   clearTimer(timer: Timer | undefined): void;
@@ -76,6 +82,7 @@ export function createContext(io: Server, timings: Partial<Timings> = {}): Ctx {
     botTurns: new Map(),
     practiceCleanupTimers: new Map(),
     abandonTimers: new Map(),
+    tallies: new Map(),
     setTimer(fn, ms) {
       const timer = setTimeout(() => {
         live.delete(timer);

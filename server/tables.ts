@@ -105,6 +105,7 @@ export function discardPracticeRoom(ctx: Ctx, roomId: string): void {
   room.gameId = (room.gameId ?? 0) + 1; // stop any pending timers acting on it
   ctx.rooms.deleteRoom(roomId);
   ctx.roundLogs.delete(roomId);
+  ctx.tallies.delete(roomId);
   ctx.botTurns.delete(roomId);
   ctx.absentTurns.delete(roomId);
   ctx.clearTimer(ctx.practiceCleanupTimers.get(roomId));

@@ -7,6 +7,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "start-server": "tsx server/server.ts",
+    "stats-server": "tsx stats/devServer.ts",
     "typecheck": "tsc --noEmit && svelte-check --tsconfig ./tsconfig.json --threshold error",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run"

@@ -1,6 +1,6 @@
 <script lang="ts">
   /** Small inline line icons (no icon font / emoji, so they render the same everywhere). */
-  export let name: 'settings' | 'scores' | 'close' | 'crown' | 'check' | 'x' | 'wifi-off' | 'plus' | 'robot';
+  export let name: 'settings' | 'scores' | 'close' | 'crown' | 'check' | 'x' | 'wifi-off' | 'plus' | 'robot' | 'trophy';
   export let size = 22;
 </script>
 
@@ -32,6 +32,8 @@
     <path d="M18 6 6 18M6 6l12 12" />
   {:else if name === 'plus'}
     <path d="M12 5v14M5 12h14" />
+  {:else if name === 'trophy'}
+    <path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4zM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4" />
   {:else if name === 'robot'}
     <rect x="4" y="8" width="16" height="11" rx="3" />
     <path d="M12 4v4M9 13h.01M15 13h.01M2 12v3M22 12v3" />

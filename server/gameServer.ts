@@ -9,12 +9,19 @@ import { Server } from 'socket.io';
 import { createContext, type Ctx, type Timings } from './context.ts';
 import { registerSocketHandlers } from './handlers.ts';
 import { allowedOriginsFrom, originChecker } from './origins.ts';
+import { httpGameReporter } from './stats.ts';
+import type { GameRecord } from '../shared/stats.ts';
 
 export type GameServerOptions = Partial<Timings> & {
   /** Extra origins allowed to connect (comma-separated), e.g. the Cloudflare Pages site. */
   corsOrigins?: string;
   /** Where the built front end lives (default: ../dist). */
   distPath?: string;
+  /** The stats API (the Cloudflare Pages site) and its shared secret; without both, stats are off. */
+  statsUrl?: string;
+  statsSecret?: string;
+  /** Instead of statsUrl/statsSecret: receive finished games directly (used by tests). */
+  reportGame?: (record: GameRecord) => void;
 };
 
 export type GameServer = {
@@ -27,7 +34,7 @@ export type GameServer = {
 };
 
 export function createGameServer(options: GameServerOptions = {}): GameServer {
-  const { corsOrigins, distPath: distOption, ...timings } = options;
+  const { corsOrigins, distPath: distOption, statsUrl, statsSecret, reportGame, ...timings } = options;
   const isAllowedOrigin = originChecker(allowedOriginsFrom(corsOrigins));
   const distPath = distOption ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist');
 
@@ -49,6 +56,7 @@ export function createGameServer(options: GameServerOptions = {}): GameServer {
     }
   });
   const ctx = createContext(io, timings);
+  ctx.reportGame = reportGame ?? (statsUrl && statsSecret ? httpGameReporter(statsUrl, statsSecret, ctx.setTimer) : undefined);
 
   // A tiny "are you awake?" check. The front end calls /awake to wake a sleeping free-tier server
   // (ad blockers sometimes block "/health"); Render uses /health as its health check.
@@ -60,6 +68,21 @@ export function createGameServer(options: GameServerOptions = {}): GameServer {
     }
     res.setHeader('Cache-Control', 'no-store');
     res.json({ ok: true });
+  });
+
+  // Stats live on the Pages site; this passes them through so the app can always ask its own
+  // address for /api/stats (whether it was loaded from Pages, from here, or from the Vite dev server).
+  app.get('/api/stats', async (_req, res) => {
+    if (!statsUrl) {
+      res.status(503).json({ error: 'Stats are not set up on this server' });
+      return;
+    }
+    try {
+      const upstream = await fetch(`${statsUrl.replace(/\/+$/, '')}/api/stats`, { headers: { accept: 'application/json' } });
+      res.status(upstream.status).type('application/json').send(await upstream.text());
+    } catch {
+      res.status(502).json({ error: 'Stats are unavailable right now' });
+    }
   });
 
   // Serve the built front end when available (the Render address still works as a fallback).
