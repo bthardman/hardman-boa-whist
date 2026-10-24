@@ -55,28 +55,35 @@ export function heuristicPolicy(s: SimState, seat: number): Card {
   return isLast ? highest(winners) : lowest(winners);
 }
 
-/** Rough number of tricks a hand should take, used to guess bids not yet made. */
-export function estimateTricks(hand: Card[], numPlayers: number): number {
-  const bySuit = new Map<string, Card[]>();
-  for (const c of hand) bySuit.set(c.suit, [...(bySuit.get(c.suit) ?? []), c]);
-  const trumps = bySuit.get(TRUMP) ?? [];
-  let tricks = 0;
-  for (const c of trumps) {
-    const v = cardValue(c.value); // 12 = A
-    tricks += v >= 12 ? 1 : v >= 11 ? 0.85 : v >= 10 ? 0.65 : v >= 9 ? 0.45 : 0.25;
-  }
-  for (const [suit, cards] of bySuit) {
-    if (suit === TRUMP) continue;
-    for (const c of cards) {
-      const v = cardValue(c.value);
-      if (v === 12) tricks += cards.length <= 4 ? 0.8 : 0.6;
-      else if (v === 11 && cards.length >= 2 && cards.length <= 3) tricks += 0.4;
-    }
-  }
-  // Short plain suits let spare trumps ruff.
-  const plainSuitsHeld = [...bySuit.keys()].filter((s) => s !== TRUMP).length;
-  tricks += Math.min(trumps.length, 3 - plainSuitsHeld) * 0.3;
-  // More players means more competition for each trick.
-  tricks *= numPlayers <= 2 ? 1.25 : numPlayers >= 5 ? 0.8 : 1;
-  return Math.max(0, Math.min(7, Math.round(tricks)));
+/**
+ * Where a player stands on their bid:
+ * chase = still needs tricks and can get them, hold = has exactly enough (must lose the rest),
+ * free = can no longer make it (over, or too few tricks left), so nothing to protect.
+ */
+export function bidMode(s: SimState, seat: number): 'chase' | 'hold' | 'free' {
+  const need = s.targets[seat] - s.tricksWon[seat];
+  if (need < 0 || need > s.hands[seat].length) return 'free';
+  return need === 0 ? 'hold' : 'chase';
+}
+
+/**
+ * A sharp player (used by Hard): plays for its own bid exactly like `heuristicPolicy`, but once
+ * that bid is out of reach it spoils: it lets a player who must not win any more take the trick
+ * (the "slide"), and takes tricks away from players still chasing theirs.
+ */
+export function sharpPolicy(s: SimState, seat: number): Card {
+  if (bidMode(s, seat) !== 'free') return heuristicPolicy(s, seat);
+  const legal = legalCards(s.hands[seat], s.trick);
+  if (legal.length === 1) return legal[0];
+  if (!s.trick.length) return lowest(legal);
+
+  const current = s.trick[winningIndex(s.trick)];
+  const winners = legal.filter((c) => beats(c, current.card));
+  const losers = legal.filter((c) => !beats(c, current.card));
+  const need = s.targets[current.seat] - s.tricksWon[current.seat];
+  // Winning player must not take another: leave it with them.
+  if (need === 0) return losers.length ? highest(losers) : lowest(winners);
+  // Winning player still needs tricks: take it off them if we can.
+  if (need > 0) return winners.length ? lowest(winners) : lowest(legal);
+  return lowest(legal);
 }

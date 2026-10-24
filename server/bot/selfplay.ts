@@ -4,7 +4,7 @@ import type { Card } from '../../shared/types.ts';
 import { cardValue } from '../utils/cardUtils.ts';
 import type { BotView, RoundLogEntry } from './botView.ts';
 import { applyCard, fullDeck, legalCards, makeRng, shuffleInPlace, type Rng, type SimState } from './simulate.ts';
-import { allowedBid, easy, hard, medium, ruleOfThumb, type Strategy } from './strategies.ts';
+import { allowedBid, easy, hard, medium, naturalBidder, type Strategy } from './strategies.ts';
 
 /** What the server did for offline players before bots existed: lowest legal bid and card. */
 export const lowestLegal: Strategy = {
@@ -87,15 +87,39 @@ export function hitRate(test: Strategy, field: Strategy, players: number, rounds
   return hits / rounds;
 }
 
+/**
+ * How a strategy bids when everyone at the table uses it: the average distance of the table's
+ * total from 7, plus seat 0's bids when it bids first (to spot wild 0s and 7s).
+ */
+export function bidStats(strategy: Strategy, players: number, rounds: number, seed = 2) {
+  const rng = makeRng(seed);
+  let totalOff = 0;
+  const firstBids: number[] = [];
+  for (let r = 0; r < rounds; r++) {
+    const result = playRound(Array(players).fill(strategy), rng, 0);
+    totalOff += Math.abs(result.bids.reduce((a, b) => a + b, 0) - 7);
+    firstBids.push(result.bids[0]);
+  }
+  const avg = firstBids.reduce((a, b) => a + b, 0) / rounds;
+  const extremes = firstBids.filter((b) => b === 0 || b === 7).length / rounds;
+  return { avgTotalOff: totalOff / rounds, avgFirstBid: avg, extremeFirstBids: extremes };
+}
+
 if (process.argv[1]?.replace(/\\/g, '/').endsWith('server/bot/selfplay.ts')) {
   const rounds = Number(process.argv[2] ?? 400);
   const contenders = [lowestLegal, easy, medium, hard(120)];
+  const pct = (x: number) => `${(x * 100).toFixed(1)}%`.padStart(6);
   for (const players of [2, 4, 6]) {
-    console.log(`\n${players} players, ${rounds} rounds, opponents = rule-of-thumb`);
+    console.log(`
+${players} players, ${rounds} rounds, opponents = natural bidders (sensible-human stand-ins)`);
     for (const c of contenders) {
       const started = Date.now();
-      const rate = hitRate(c, ruleOfThumb, players, rounds);
-      console.log(`  ${c.name.padEnd(16)} hits bid ${(rate * 100).toFixed(1)}%  (${Date.now() - started}ms)`);
+      const rate = hitRate(c, naturalBidder, players, rounds);
+      const stats = bidStats(c, players, Math.min(rounds, 150));
+      console.log(
+        `  ${c.name.padEnd(14)} hits bid ${pct(rate)} | table total off 7 by ${stats.avgTotalOff.toFixed(2)}` +
+          ` | first bid avg ${stats.avgFirstBid.toFixed(2)}, 0-or-7 ${pct(stats.extremeFirstBids)}  (${Date.now() - started}ms)`
+      );
     }
   }
 }

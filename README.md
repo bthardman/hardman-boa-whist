@@ -106,7 +106,7 @@ Computer players show up as **Player 2**, **Player 3** and so on, each with a ro
 - **Difficulty** applies to all the computer players at the table:
   - **Easy** plays by rules of thumb and sometimes misjudges a bid or plays a loose card.
   - **Medium** looks ahead a little before each bid and card.
-  - **Hard** imagines hundreds of ways the hidden cards could be dealt, plays each one out, and picks whatever most often lands exactly on its bid.
+  - **Hard** imagines hundreds of ways the hidden cards could be dealt, plays each one out (expecting sharp opponents), and picks whatever most often lands exactly on its bid. It reads the bids already made and expects the table to add up to about 7. Once its own bid is out of reach, it plays to make you miss yours, for example sliding a trick onto someone who bid 0.
 
 Computer players don't cheat: they only know their own hand and what has been played in front of everyone.
 
