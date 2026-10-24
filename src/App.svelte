@@ -20,6 +20,8 @@
   $: inGame = phase === 'bidding' || phase === 'tricks' || phase === 'round_end';
 
   function onDocumentClick(event: MouseEvent) {
+    // Browsers only allow sound after a tap: the first one switches audio on.
+    soundEffects.unlock();
     const target = event.target;
     if (!(target instanceof Element)) return;
     const button = target.closest('button');
@@ -29,8 +31,9 @@
 
   onMount(() => {
     setupSocketHandlers();
+    // Only for real problems: arriving during a game now just watches it until it ends.
     stopJoinErrors = registerErrorHandler('join_error', (message) => {
-      joinBlockedMessage = message || 'A game is already in progress. You can join when it finishes.';
+      joinBlockedMessage = message || "That table isn't available.";
     });
   });
 
@@ -45,7 +48,7 @@
 {#if joinBlockedMessage}
   <main class="notice" role="alert">
     <img src="/logo/logo.png" alt="Hardman Boa-Whist" />
-    <h1>Game in progress</h1>
+    <h1>Can't join the table</h1>
     <p>{joinBlockedMessage}</p>
     <button class="btn btn-primary" type="button" on:click={() => window.location.reload()}>Try again</button>
   </main>

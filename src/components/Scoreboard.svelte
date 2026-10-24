@@ -2,7 +2,7 @@
   import { gameState, localPlayer } from '../store';
   import { displayName } from '../../shared/players';
   import { getPlayerAvatarUrl } from '../avatarUtils';
-  import { biddingOrder, bidInTrouble } from '../utils/gameUtils';
+  import { bidBalanceLabel, biddingOrder, bidInTrouble } from '../utils/gameUtils';
 
   export let showThisRound = true;
 
@@ -17,6 +17,7 @@
   $: soleLeader = topScore > 0 && standings.filter((s) => s.score === topScore).length === 1;
   $: inRound = !!state && (state.state === 'bidding' || state.state === 'tricks' || state.state === 'round_end');
   $: isMe = (id: string) => !!$localPlayer && $localPlayer.playerId === id;
+  $: allBid = !!state && state.players.every((p) => typeof p.bid === 'number');
 </script>
 
 {#if state}
@@ -39,7 +40,7 @@
     </ol>
 
     {#if showThisRound && inRound}
-      <h4>This round</h4>
+      <h4>This round{#if allBid}<span class="balance">{bidBalanceLabel(state.players)}</span>{/if}</h4>
       <table>
         <thead>
           <tr><th scope="col">Player</th><th scope="col">Bid</th><th scope="col">Won</th></tr>
@@ -127,10 +128,20 @@
     line-height: 1;
   }
   h4 {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
     margin: 1.2rem 0 0.4rem;
     font-family: var(--font-display);
     font-size: 1.3rem;
     font-weight: 700;
+  }
+  h4 .balance {
+    font-family: var(--font-body);
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--ink-soft);
   }
   table {
     width: 100%;

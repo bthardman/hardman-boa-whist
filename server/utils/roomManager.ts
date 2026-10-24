@@ -42,6 +42,7 @@ export class RoomManager {
       // Reconnection: update socket ID and mark as connected
       player.socketId = socketId;
       player.disconnected = false;
+      player.disconnectedAt = undefined;
       // Note: player's hand and game state are preserved from room state
     } else {
       // New player joining
@@ -67,11 +68,6 @@ export class RoomManager {
       }
     }
     return null;
-  }
-
-  findPlayerByPlayerId(roomId: string, playerId: string): Player | undefined {
-    const room = this.rooms[roomId];
-    return room?.players.find(p => p.playerId === playerId);
   }
 
   allRooms(): GameState[] {

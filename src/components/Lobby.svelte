@@ -1,11 +1,7 @@
-<script lang="ts" context="module">
-  /** The logo intro plays once per visit, not every time you come back to the lobby after a game. */
-  let introPlayed = false;
-</script>
-
 <script lang="ts">
   import { onMount, onDestroy, afterUpdate } from 'svelte';
-  import { gameState, roomId, localPlayer } from '../store';
+  import { gameState, roomId, localPlayer, introDone } from '../store';
+  import { get } from 'svelte/store';
   import { displayName, isSeated } from '../../shared/players';
   import { getPlayerAvatarUrl } from '../avatarUtils';
   import { AvatarChoice, MAX_PLAYERS } from '../../shared/types';
@@ -36,7 +32,7 @@
   // Intro: tap the logo -> logo burst with flying faces -> logo docks -> seats appear
   // ---------------------------------------------------------------------------
   type IntroStage = 'pending' | 'pending_shrink' | 'splash' | 'dock' | 'seats' | 'done';
-  let introStage: IntroStage = introPlayed ? 'done' : 'pending';
+  let introStage: IntroStage = get(introDone) ? 'done' : 'pending';
   const introTimers: ReturnType<typeof setTimeout>[] = [];
   let pendingShrinkFallbackTimer: ReturnType<typeof setTimeout> | null = null;
   /** Safety net if animationend doesn't fire; ~one frame longer than the CSS shrink. */
@@ -88,7 +84,7 @@
     introTimers.push(
       setTimeout(() => {
         introStage = 'done';
-        introPlayed = true;
+        introDone.set(true);
       }, 4900)
     );
   }
@@ -154,7 +150,7 @@
   $: iAmSeated = mySeat !== AvatarChoice.UNDEFINED;
   $: tableFull = seatedCount >= MAX_PLAYERS && !iAmSeated;
   $: anyPersonSeated = players.some((p) => !p.isBot && isSeated(p));
-  $: canStart = seatedCount >= 2 && anyPersonSeated;
+  $: canStart = seatedCount >= 2 && anyPersonSeated && iAmSeated;
   $: bots = players.filter((p) => p.isBot);
   $: difficultyLabel = { easy: 'Easy', medium: 'Medium', hard: 'Hard' }[$gameState?.botDifficulty ?? 'medium'];
   let botsOpen = false;
@@ -232,13 +228,13 @@
     socket.emit('cancel_start', { roomId: $roomId });
   }
 
-  $: startLabel = !canStart
-    ? !anyPersonSeated && seatedCount > 0
-      ? 'Pick your picture to play'
+  $: startLabel = canStart
+    ? `Start game with ${seatedCount} players`
+    : !iAmSeated
+      ? 'Tap your picture to join'
       : seatedCount === 1
         ? 'Add a player or a computer'
-        : 'Waiting for players'
-    : `Start game with ${seatedCount} players`;
+        : 'Waiting for players';
 
   const cleanups: Array<() => void> = [];
   onMount(() => {

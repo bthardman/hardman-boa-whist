@@ -102,3 +102,14 @@ export function sortHand(hand: OwnedCard[]): OwnedCard[] {
   }
   return best.flatMap((s) => bySuit[s]);
 }
+
+/**
+ * The bids against the 7 tricks, e.g. "Bids 9/7 · 2 over". Once everyone has bid the total is
+ * never exactly 7 (the last bidder can't make it 7), so it's always over or under.
+ */
+export function bidBalanceLabel(players: Player[]): string {
+  const total = totalBids(players);
+  const diff = total - TRICKS_PER_ROUND;
+  const base = `Bids ${total}/${TRICKS_PER_ROUND}`;
+  return diff === 0 ? base : `${base} · ${Math.abs(diff)} ${diff > 0 ? 'over' : 'under'}`;
+}

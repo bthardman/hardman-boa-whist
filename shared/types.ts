@@ -27,13 +27,16 @@ export type OwnedCard = { card: Card; playerId: string };
 
 export type Player = {
   selectedAvatar: AvatarChoice; // required, initially UNDEFINED
-  inGameAvatar?: string;
   hand: OwnedCard[];
+  /** Public id, safe to share with every device (derived from the device's secret token on the server). */
   playerId: string;
+  /** Server only: never sent to devices. */
   socketId?: string;
   tricksWon: number;
   bid?: number;
   disconnected?: boolean;
+  /** Server only: when this player lost connection (epoch ms). */
+  disconnectedAt?: number;
   /** A computer player: played by the server, never has a socket or a family avatar. */
   isBot?: boolean;
   /** "Player 2", "Player 3"… shown instead of an avatar name for bots. */
@@ -67,7 +70,6 @@ export type GameState = {
   winner?: Player;
   scoreboard: Record<number, number>; // player index -> score
   roundNumber: number; // current round number
-  maxRounds?: number; // optional: max rounds before game ends
   winningScore?: number; // optional: score threshold to win
   gameSpeed?: GameSpeed; // optional: timing speed preference for round flow
   /** How well the computer players play (default medium). */
@@ -82,4 +84,8 @@ export type GameState = {
   startCountdown?: { id: number; durationMs: number; playerIds: string[] };
   /** Epoch ms when an offline player's turn will be played for them. */
   absentTurnDeadline?: number;
+  /** Sent to each device: the public id of the player viewing (not in `players` while watching). */
+  viewerId?: string;
+  /** Sent to each device: the server's clock when the state was sent, so countdowns ignore wrong device clocks. */
+  serverNow?: number;
 };

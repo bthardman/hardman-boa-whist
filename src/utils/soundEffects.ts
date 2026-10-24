@@ -1,3 +1,5 @@
+// Game sounds. Played through the Web Audio API so the volume settings work everywhere: iPhones
+// and iPads ignore the volume of plain <audio> elements. Falls back to <audio> if Web Audio is missing.
 import winHandSfx from '../assets/sounds/win-hand.wav';
 import loseHandSfx from '../assets/sounds/lose-hand.wav';
 import dealingCards1Sfx from '../assets/sounds/dealing-cards-1.wav';
@@ -18,228 +20,147 @@ import gameStartSfx from '../assets/sounds/game-start.wav';
 import yourGoSfx from '../assets/sounds/your-go.wav';
 import { readVolumePrefs } from './playerPrefsCookies';
 
+/** "fx" follows the Sound effects slider, "music" the Music slider. */
+type Channel = 'fx' | 'music';
+
+const CARD_SOUNDS = [dealingCards1Sfx, dealingCards2Sfx, dealingCards3Sfx, dealingCards4Sfx, dealingCards5Sfx];
+
+/** A sound that can't start within this long (still loading, or audio not yet allowed) is skipped, not played late. */
+const MAX_START_DELAY_MS = 3000;
+
+const clampVolume = (v: number) => (Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0);
+
 class SoundEffects {
-  private enabled = true;
-  private cardsVolume = 1;
-  private jinglesVolume = 1;
-  private handWinAudio: HTMLAudioElement | null = null;
-  private handLoseAudio: HTMLAudioElement | null = null;
-  private trickWinAudio: HTMLAudioElement | null = null;
-  private trickLoseAudio: HTMLAudioElement | null = null;
-  private gameEndAudio: HTMLAudioElement | null = null;
-  private bidDisplayAudio: HTMLAudioElement | null = null;
-  private bidReceivedAudio: HTMLAudioElement | null = null;
-  private yourTurnAudio: HTMLAudioElement | null = null;
-  private buttonAudio: HTMLAudioElement | null = null;
-  private avatarSelectAudio: HTMLAudioElement | null = null;
-  private roundHandStartAudio: HTMLAudioElement | null = null;
-  private gameStartAudio: HTMLAudioElement | null = null;
-  private yourGoAudio: HTMLAudioElement | null = null;
-  private cardAudios: HTMLAudioElement[] = [];
+  private volumes: Record<Channel, number> = { fx: 1, music: 1 };
+  private context: AudioContext | null = null;
+  private buffers = new Map<string, Promise<AudioBuffer | null>>();
+  private fallbacks = new Map<string, HTMLAudioElement>();
 
   constructor() {
     if (typeof window === 'undefined') return;
-    const { cardsVolume: c, jinglesVolume: j } = readVolumePrefs();
-    this.cardsVolume = this.clampVolume(c / 100);
-    this.jinglesVolume = this.clampVolume(j / 100);
+    const { cardsVolume, jinglesVolume } = readVolumePrefs();
+    this.volumes = { fx: clampVolume(cardsVolume / 100), music: clampVolume(jinglesVolume / 100) };
   }
 
-  private clampVolume(v: number): number {
-    if (!Number.isFinite(v)) return 0;
-    return Math.max(0, Math.min(1, v));
+  /** Browsers only allow sound after a tap, so call this from a tap handler. */
+  unlock(): void {
+    const ctx = this.audioContext();
+    if (ctx?.state === 'suspended') void ctx.resume().catch(() => {});
   }
 
-  private getChannelVolume(kind: 'win' | 'lose' | 'win_trick' | 'lose_trick' | 'game_end' | 'bid_display' | 'bid_received' | 'your_turn' | 'button' | 'avatar_select' | 'round_hand_start' | 'game_start' | 'your_go'): number {
-    if (
-      kind === 'button' ||
-      kind === 'avatar_select' ||
-      kind === 'game_start' ||
-      kind === 'bid_received' ||
-      kind === 'your_go'
-    ) {
-      return this.cardsVolume;
+  private audioContext(): AudioContext | null {
+    if (this.context || typeof window === 'undefined') return this.context;
+    const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctor) return null;
+    try {
+      this.context = new Ctor();
+    } catch {
+      return null;
     }
-    return this.jinglesVolume;
+    return this.context;
   }
 
-  private playClip(kind: 'win' | 'lose' | 'win_trick' | 'lose_trick' | 'game_end' | 'bid_display' | 'bid_received' | 'your_turn' | 'button' | 'avatar_select' | 'round_hand_start' | 'game_start' | 'your_go'): void {
-    if (typeof window === 'undefined') return;
-    if (!this.enabled) return;
-    const target =
-      kind === 'win'
-        ? 'handWinAudio'
-        : kind === 'lose'
-          ? 'handLoseAudio'
-          : kind === 'win_trick'
-            ? 'trickWinAudio'
-            : kind === 'lose_trick'
-              ? 'trickLoseAudio'
-              : kind === 'game_end'
-                ? 'gameEndAudio'
-                : kind === 'bid_display'
-                  ? 'bidDisplayAudio'
-                  : kind === 'bid_received'
-                    ? 'bidReceivedAudio'
-                    : kind === 'your_turn'
-                      ? 'yourTurnAudio'
-                      : kind === 'button'
-                        ? 'buttonAudio'
-                        : kind === 'avatar_select'
-                          ? 'avatarSelectAudio'
-                          : kind === 'round_hand_start'
-                            ? 'roundHandStartAudio'
-                            : kind === 'game_start'
-                              ? 'gameStartAudio'
-                              : 'yourGoAudio';
-    if (!this[target]) {
-      const src =
-        kind === 'win'
-          ? winHandSfx
-          : kind === 'lose'
-            ? loseHandSfx
-            : kind === 'win_trick'
-              ? winTrickSfx
-              : kind === 'lose_trick'
-                ? loseTrickSfx
-                : kind === 'game_end'
-                  ? gameEndSfx
-                  : kind === 'bid_display'
-                    ? bidDisplaySfx
-                    : kind === 'bid_received'
-                      ? bidReceivedSfx
-                      : kind === 'your_turn'
-                        ? yourTurnSfx
-                        : kind === 'button'
-                          ? buttonSfx
-                          : kind === 'avatar_select'
-                            ? avatarSelectSfx
-                            : kind === 'round_hand_start'
-                              ? roundHandStartSfx
-                              : kind === 'game_start'
-                                ? gameStartSfx
-                                : yourGoSfx;
-      this[target] = new Audio(src);
-      this[target]!.preload = 'auto';
+  private loadBuffer(ctx: AudioContext, src: string): Promise<AudioBuffer | null> {
+    let pending = this.buffers.get(src);
+    if (!pending) {
+      pending = fetch(src)
+        .then((res) => res.arrayBuffer())
+        .then((data) => ctx.decodeAudioData(data))
+        .catch(() => null);
+      this.buffers.set(src, pending);
     }
-    const clip = this[target]!;
-    clip.volume = this.getChannelVolume(kind);
-    clip.currentTime = 0;
-    void clip.play().catch(() => {
-      /* Autoplay / decode / load errors — no retry; game continues without sound */
-    });
+    return pending;
   }
 
-  private playRandomCardClip(): void {
+  private play(src: string, channel: Channel): void {
     if (typeof window === 'undefined') return;
-    if (!this.enabled) return;
-    if (this.cardAudios.length === 0) {
-      const cardSources = [
-        dealingCards1Sfx,
-        dealingCards2Sfx,
-        dealingCards3Sfx,
-        dealingCards4Sfx,
-        dealingCards5Sfx
-      ];
-      this.cardAudios = cardSources.map((src) => {
-        const audio = new Audio(src);
-        audio.preload = 'auto';
-        return audio;
+    const volume = this.volumes[channel];
+    if (volume <= 0) return; // muted: don't play at all
+    const ctx = this.audioContext();
+    if (!ctx) {
+      this.playFallback(src, volume);
+      return;
+    }
+    const requestedAt = Date.now();
+    const ready = ctx.state === 'running' ? Promise.resolve() : ctx.resume();
+    void Promise.all([ready, this.loadBuffer(ctx, src)])
+      .then(([, buffer]) => {
+        // Skip rather than play a stale sound (e.g. queued up before audio was allowed).
+        if (!buffer || ctx.state !== 'running' || Date.now() - requestedAt > MAX_START_DELAY_MS) return;
+        const source = ctx.createBufferSource();
+        const gain = ctx.createGain();
+        gain.gain.value = volume;
+        source.buffer = buffer;
+        source.connect(gain).connect(ctx.destination);
+        source.start();
+      })
+      .catch(() => {
+        /* audio not allowed yet: the game carries on silently */
       });
-    }
-    const clip = this.cardAudios[Math.floor(Math.random() * this.cardAudios.length)];
-    clip.volume = this.cardsVolume;
-    clip.currentTime = 0;
-    void clip.play().catch(() => {
-      // Ignore autoplay/user-gesture errors; game continues without sound.
-    });
   }
 
-  playDeal(): void {
-    this.playRandomCardClip();
+  private playFallback(src: string, volume: number): void {
+    let clip = this.fallbacks.get(src);
+    if (!clip) {
+      clip = new Audio(src);
+      clip.preload = 'auto';
+      this.fallbacks.set(src, clip);
+    }
+    clip.volume = volume;
+    clip.currentTime = 0;
+    void clip.play().catch(() => {
+      /* autoplay / decode errors: carry on without sound */
+    });
   }
 
   playCard(): void {
-    this.playRandomCardClip();
+    this.play(CARD_SOUNDS[Math.floor(Math.random() * CARD_SOUNDS.length)], 'fx');
   }
-
   playTrickWin(): void {
-    this.playClip('win_trick');
+    this.play(winTrickSfx, 'music');
   }
-
   playTrickLose(): void {
-    this.playClip('lose_trick');
+    this.play(loseTrickSfx, 'music');
   }
-
-  playRoundWin(): void {
-    this.playClip('win');
-  }
-
   playHandWin(): void {
-    this.playClip('win');
+    this.play(winHandSfx, 'music');
   }
-
   playHandLose(): void {
-    this.playClip('lose');
+    this.play(loseHandSfx, 'music');
   }
-
   playGameEnd(): void {
-    this.playClip('game_end');
+    this.play(gameEndSfx, 'music');
   }
-
   playBidDisplay(): void {
-    this.playClip('bid_display');
+    this.play(bidDisplaySfx, 'music');
   }
-
   playBidReceived(): void {
-    this.playClip('bid_received');
+    this.play(bidReceivedSfx, 'fx');
   }
-
   playYourTurn(): void {
-    this.playClip('your_turn');
+    this.play(yourTurnSfx, 'music');
   }
-
   playButton(): void {
-    this.playClip('button');
+    this.play(buttonSfx, 'fx');
   }
-
   playAvatarSelect(): void {
-    this.playClip('avatar_select');
+    this.play(avatarSelectSfx, 'fx');
   }
-
   playRoundHandStart(): void {
-    this.playClip('round_hand_start');
+    this.play(roundHandStartSfx, 'music');
   }
-
   playGameStart(): void {
-    this.playClip('game_start');
+    this.play(gameStartSfx, 'fx');
   }
-
   playYourGo(): void {
-    this.playClip('your_go');
-  }
-
-  setEnabled(next: boolean): void {
-    this.enabled = next;
-  }
-
-  isEnabled(): boolean {
-    return this.enabled;
+    this.play(yourGoSfx, 'fx');
   }
 
   setCardsVolume(next: number): void {
-    this.cardsVolume = this.clampVolume(next);
+    this.volumes.fx = clampVolume(next);
   }
-
-  getCardsVolume(): number {
-    return this.cardsVolume;
-  }
-
   setJinglesVolume(next: number): void {
-    this.jinglesVolume = this.clampVolume(next);
-  }
-
-  getJinglesVolume(): number {
-    return this.jinglesVolume;
+    this.volumes.music = clampVolume(next);
   }
 }
 

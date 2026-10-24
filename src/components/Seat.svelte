@@ -2,6 +2,7 @@
   import type { Player } from '../../shared/types';
   import { displayName } from '../../shared/players';
   import { getPlayerAvatarUrl } from '../avatarUtils';
+  import { avatarFrame } from '../utils/avatarFrame';
   import Icon from './ui/Icon.svelte';
   import { createEventDispatcher } from 'svelte';
 
@@ -54,10 +55,10 @@
   <div class="portrait">
     {#if portraitButton}
       <button type="button" class="portrait-btn" aria-label="Send a reaction" on:click={() => dispatch('portrait')}>
-        <img class="avatar" src={getPlayerAvatarUrl(player)} alt="" />
+        <img class="avatar" src={getPlayerAvatarUrl(player, $avatarFrame)} alt="" />
       </button>
     {:else}
-      <img class="avatar" src={getPlayerAvatarUrl(player)} alt="" />
+      <img class="avatar" src={getPlayerAvatarUrl(player, $avatarFrame)} alt="" />
     {/if}
     {#if emote}
       {#key emote}

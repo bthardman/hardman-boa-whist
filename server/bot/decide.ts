@@ -93,14 +93,16 @@ export function decidePlay(view: BotView, opts: SearchOptions): Card {
     });
   });
 
-  // Among equally good cards, prefer what the rule-of-thumb player would do.
+  // Among equally good cards, prefer what the rule-of-thumb player would do. It sees the bot's
+  // whole hand (so it judges correctly whether the bid is still makeable); if it would pick a
+  // card outside the tied set, just take the first tied card.
   const best = Math.max(...scores);
   const top = legal.filter((_, i) => scores[i] >= best - 1e-9);
   if (top.length === 1) return top[0];
-  // The policy chooses among the top cards only, as if they were the bot's whole hand.
   const hands: Card[][] = Array.from({ length: view.numPlayers }, () => []);
-  hands[view.seat] = top;
-  return policy({ hands, tricksWon: view.tricksWon, targets, trick: view.trick, next: view.seat }, view.seat);
+  hands[view.seat] = view.hand;
+  const preferred = policy({ hands, tricksWon: view.tricksWon, targets, trick: view.trick, next: view.seat }, view.seat);
+  return top.find((c) => c.id === preferred.id) ?? top[0];
 }
 
 /** Chooses a bid. `forbidden` is the one number the last bidder may not pick (or null). */

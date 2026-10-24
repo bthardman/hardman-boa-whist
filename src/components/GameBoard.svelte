@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { gameState, localPlayer, localPlayerIndex, roomId } from '../store';
+  import { gameState, localPlayer, localPlayerIndex, roomId, serverClockOffset, introDone } from '../store';
   import { onMount, onDestroy, tick } from 'svelte';
   import { fly, fade, scale } from 'svelte/transition';
   import { backOut } from 'svelte/easing';
@@ -15,10 +15,13 @@
   import { socket } from '../socket';
   import { displayName } from '../../shared/players';
   import { getPlayerAvatarUrl } from '../avatarUtils';
-  import { startAvatarSwap, stopAllAvatarSwaps } from '../utils/avatarManager';
+  import { playInFlight } from '../utils/playInFlight';
+  import { registerErrorHandler } from '../utils/socketHandlers';
+  import { showToast } from '../utils/toast';
   import {
     SUIT_SYMBOL,
     TRICKS_PER_ROUND,
+    bidBalanceLabel,
     bidInTrouble,
     calculateTrickWinner,
     getForbiddenBid,
@@ -29,7 +32,6 @@
   import { soundEffects } from '../utils/soundEffects';
   import { turnFlash, textSize } from '../utils/prefs';
 
-  const ROUND_SUMMARY_MS = 15000;
   const TURN_REMINDER_MS = 20000;
 
   let scoreboardOpen = false;
@@ -78,6 +80,22 @@
   $: ledSuit = trick[0]?.card.suit ?? null;
   $: hand = $localPlayer ? sortHand($localPlayer.hand) : [];
   $: mustFollow = isLocalTurnToPlay && !!ledSuit && hand.some((c) => c.card.suit === ledSuit);
+  /** Watching a game you're not in: no hand, no actions (you join when it ends). */
+  $: spectating = !$localPlayer;
+  /** People who've lost connection: a watcher can carry on their seat from this device. */
+  $: awaySeats = players.filter((p) => !p.isBot && p.disconnected);
+  let takeOverTarget: Player | null = null;
+  // Close the confirm if that person comes back (or someone else takes the seat).
+  $: if (takeOverTarget && !awaySeats.some((p) => p.playerId === takeOverTarget?.playerId)) takeOverTarget = null;
+  function takeOver() {
+    if (!takeOverTarget) return;
+    socket.emit('take_seat', { roomId: $roomId, playerId: takeOverTarget.playerId });
+    takeOverTarget = null;
+  }
+
+  // A card on its way to the server blocks further taps until the turn moves on or it's rejected.
+  $: if (!isLocalTurnToPlay) playInFlight.set(false);
+
   /** Players who've already played to the trick in progress (dimmed so those still to play stand out). */
   $: playedIds = new Set(phase === 'tricks' && !isTrickResolving ? trick.map((c) => c.playerId) : []);
 
@@ -280,18 +298,18 @@
     }, scaleMs(1600));
   }
 
-  // ---- Round summary countdown ----
-  let summaryEndsAt = 0;
+  // ---- Round summary countdown (to the server's deal time, on this device's clock) ----
   let now = Date.now();
   let clock: ReturnType<typeof setInterval> | null = null;
-  $: if (phase === 'round_end' && !summaryEndsAt) {
-    summaryEndsAt = Date.now() + scaleMs(ROUND_SUMMARY_MS);
+  $: inSummary = phase === 'round_end';
+  $: if (inSummary && !clock) {
+    now = Date.now();
     clock = setInterval(() => (now = Date.now()), 250);
-  } else if (phase !== 'round_end' && summaryEndsAt) {
-    summaryEndsAt = 0;
-    if (clock) clearInterval(clock);
+  } else if (!inSummary && clock) {
+    clearInterval(clock);
     clock = null;
   }
+  $: summaryEndsAt = state?.roundEndsAt ? state.roundEndsAt - $serverClockOffset : now;
   $: secondsLeft = Math.max(0, Math.ceil((summaryEndsAt - now) / 1000));
   $: roundRows = state
     ? players
@@ -318,7 +336,9 @@
     clearInterval(absentClock);
     absentClock = null;
   }
-  $: absentSeconds = state?.absentTurnDeadline ? Math.max(0, Math.ceil((state.absentTurnDeadline - absentNow) / 1000)) : null;
+  $: absentSeconds = state?.absentTurnDeadline
+    ? Math.max(0, Math.ceil((state.absentTurnDeadline - $serverClockOffset - absentNow) / 1000))
+    : null;
 
   function playForAbsent() {
     socket.emit('play_for_absent', { roomId: $roomId });
@@ -333,18 +353,25 @@
     socket.emit('submit_bid', { roomId: $roomId, bid });
   }
 
+  let stopPlayErrors: (() => void) | null = null;
   onMount(() => {
+    introDone.set(true); // been at the table: no logo intro when the lobby comes back
     socket.on('emote', onEmote);
-    players.forEach((player) => startAvatarSwap(player));
+    // A rejected play: say why, and let any card be tapped again.
+    stopPlayErrors = registerErrorHandler('play_card_error', (message) => {
+      playInFlight.set(false);
+      showToast(message);
+    });
   });
 
   onDestroy(() => {
     socket.off('emote', onEmote);
+    stopPlayErrors?.();
+    playInFlight.set(false);
     timers.forEach((t) => clearTimeout(t));
     timers.clear();
     if (clock) clearInterval(clock);
     if (absentClock) clearInterval(absentClock);
-    stopAllAvatarSwaps();
   });
 
   function onKeydown(e: KeyboardEvent) {
@@ -368,6 +395,9 @@
         <span class="round-meta">
           <span class="round-target">First to {state.winningScore ?? 5}</span>
           <span class="trumps" title="Hearts are always trumps"><span role="img" aria-label="Hearts">❤️</span> is trumps</span>
+          {#if phase === 'tricks'}
+            <span class="round-bids" title="Total bid against the 7 tricks">{bidBalanceLabel(players)}</span>
+          {/if}
         </span>
       </div>
       <!-- Turn status lives in the shared top bar so it never looks attached to a player's seat. -->
@@ -444,6 +474,7 @@
             </div>
           {:else if phase === 'tricks'}
             <div class="table-note quiet">
+              <span class="balance">{bidBalanceLabel(players)}</span>
               <span>{TRICKS_PER_ROUND - Math.max(0, ...players.map((p) => p.hand.length))} of {TRICKS_PER_ROUND} tricks played</span>
             </div>
           {/if}
@@ -508,6 +539,21 @@
           {/each}
         </div>
       </section>
+    {:else}
+      <section class="watch-panel" aria-label="Watching this game">
+        <p class="watch-title"><span class="live-dot" aria-hidden="true"></span> Watching — you'll join automatically when this game ends.</p>
+        {#if awaySeats.length}
+          <p class="watch-sub">Playing on another device? Take over your seat:</p>
+          <div class="away-seats">
+            {#each awaySeats as p (p.playerId)}
+              <button type="button" class="away-seat" on:click={() => (takeOverTarget = p)}>
+                <img class="avatar" src={getPlayerAvatarUrl(p)} alt="" />
+                {nameOf(p)}
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </section>
     {/if}
 
     {#if collect}
@@ -555,7 +601,9 @@
             </tbody>
           </table>
           <div class="summary-actions">
-            <button class="btn btn-primary btn-block" type="button" on:click={dealNextRound}>Deal round {state.roundNumber + 1}</button>
+            {#if !spectating}
+              <button class="btn btn-primary btn-block" type="button" on:click={dealNextRound}>Deal round {state.roundNumber + 1}</button>
+            {/if}
             <p class="countdown" aria-live="off">Dealing automatically in <span class="num">{secondsLeft}</span>s</p>
           </div>
         </div>
@@ -585,8 +633,22 @@
       </div>
     {/if}
 
+    {#if takeOverTarget}
+      <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="takeover-title">
+        <button class="overlay-dismiss" type="button" aria-label="Cancel" on:click={() => (takeOverTarget = null)}></button>
+        <div class="sheet confirm">
+          <h3 id="takeover-title">Take over {nameOf(takeOverTarget)}'s seat?</h3>
+          <p>Only if you're {nameOf(takeOverTarget)}: you'll carry on with their cards on this device.</p>
+          <div class="confirm-actions">
+            <button class="btn btn-ghost" type="button" on:click={() => (takeOverTarget = null)}>Cancel</button>
+            <button class="btn btn-primary" type="button" on:click={takeOver}>Take over</button>
+          </div>
+        </div>
+      </div>
+    {/if}
+
     {#if settingsOpen}
-      <SettingsSheet context="game" on:close={() => (settingsOpen = false)} />
+      <SettingsSheet context="game" member={!spectating} on:close={() => (settingsOpen = false)} />
     {/if}
   </div>
 {/if}
@@ -625,8 +687,13 @@
     font-size: 0.82rem;
     color: var(--on-felt-muted);
   }
-  .trumps {
+  .trumps,
+  .round-bids {
     white-space: nowrap;
+  }
+  .round-bids {
+    color: var(--on-felt);
+    font-weight: 600;
   }
   .trumps span {
     font-size: 0.95em;
@@ -774,7 +841,14 @@
     font-size: 0.55em;
   }
   .table-note.quiet {
+    gap: 0.15rem;
     font-size: 0.95rem;
+  }
+  .table-note .balance {
+    color: var(--on-felt);
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.35em;
   }
   .pill-note {
     position: absolute;
@@ -886,6 +960,88 @@
   }
   .my-area.turn .hand {
     filter: drop-shadow(0 0 18px rgba(143, 221, 251, 0.25));
+  }
+
+  /* ---------- Watching (in place of your hand) ---------- */
+  .watch-panel {
+    display: grid;
+    justify-items: center;
+    gap: 0.5rem;
+    padding: 12px 16px max(14px, env(safe-area-inset-bottom));
+    text-align: center;
+    background: linear-gradient(to top, rgba(4, 16, 27, 0.6), transparent);
+  }
+  .watch-title {
+    margin: 0;
+    max-width: 34ch;
+    font-weight: 600;
+  }
+  /* Sits on the first line of the message, however it wraps. */
+  .live-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin-right: 0.45rem;
+    vertical-align: 0.05em;
+    border-radius: 50%;
+    background: var(--heart);
+    box-shadow: 0 0 0 0 rgba(226, 56, 77, 0.6);
+    animation: live 1.6s ease-out infinite;
+  }
+  @keyframes live {
+    70% {
+      box-shadow: 0 0 0 8px rgba(226, 56, 77, 0);
+    }
+  }
+  .watch-sub {
+    margin: 0;
+    color: var(--on-felt-muted);
+    font-size: 0.92rem;
+  }
+  .away-seats {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+  }
+  .away-seat {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 4px 14px 4px 4px;
+    border: 1.5px solid rgba(234, 244, 251, 0.35);
+    border-radius: 999px;
+    background: rgba(4, 16, 27, 0.45);
+    color: var(--on-felt);
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.1rem;
+    cursor: pointer;
+  }
+  .away-seat:hover {
+    border-color: var(--ice);
+  }
+  .away-seat .avatar {
+    width: 34px;
+    height: 34px;
+    border-width: 2px;
+  }
+  .confirm {
+    width: min(100%, 420px);
+  }
+  .confirm p {
+    margin: 0.6rem 0 1.2rem;
+    color: var(--ink-soft);
+  }
+  .confirm-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .confirm-actions .btn {
+    padding: 0 0.8rem;
+    font-size: 1.1rem;
+    white-space: nowrap;
   }
 
   /* ---------- Trick sweep ---------- */

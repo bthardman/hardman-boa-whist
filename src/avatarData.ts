@@ -58,11 +58,6 @@ export function getAvatarData(avatarChoice: AvatarChoice): AvatarData {
   return avatarDataMap[avatarChoice];
 }
 
-export function getAvatarChoiceByName(name: string): AvatarChoice | undefined {
-  const entry = Object.entries(avatarDataMap).find(([_, data]) => data.name.toLowerCase() === name.toLowerCase());
-  return entry ? entry[0] as AvatarChoice : undefined;
-}
-
 export function getPlayerName(avatarChoice: AvatarChoice): string {
   return avatarDataMap[avatarChoice].name;
 }

@@ -1,5 +1,6 @@
 import type { Player } from '../shared/types';
 import { getAvatarData } from './avatarData';
+import type { AvatarFrame } from './utils/avatarFrame';
 
 /** One background colour per computer player (Player 2, 3, …), so they're easy to tell apart. */
 const BOT_COLOURS = ['#c2571a', '#2f855a', '#6b46c1', '#b83280', '#2c7a7b', '#9c6b13', '#c53030'];
@@ -13,25 +14,11 @@ export function botAvatarUrl(botName: string | undefined): string {
 }
 
 /**
- * Gets the avatar URL for a player, prioritizing inGameAvatar if available,
- * otherwise falling back to the player's selected avatar
+ * A player's picture: a robot for computer players, otherwise the family member's photo.
+ * `frame` picks between each person's two photos (seats alternate them; see avatarFrame).
  */
-export function getPlayerAvatarUrl(player: Player): string {
+export function getPlayerAvatarUrl(player: Player, frame: AvatarFrame = 1): string {
   if (player.isBot) return botAvatarUrl(player.botName);
-
-  // If player has an inGameAvatar (for dynamic swapping), use that
-  if (player.inGameAvatar) {
-    return player.inGameAvatar;
-  }
-
-  // Use the player's selected avatar
-  return getAvatarData(player.selectedAvatar).avatar1;
-}
-
-/**
- * Gets the winner's avatar URL, prioritizing inGameAvatar if available,
- * otherwise falling back to the player's selected avatar
- */
-export function getWinnerAvatarUrl(winner: Player): string {
-  return getPlayerAvatarUrl(winner);
+  const data = getAvatarData(player.selectedAvatar);
+  return frame === 2 ? data.avatar2 : data.avatar1;
 }

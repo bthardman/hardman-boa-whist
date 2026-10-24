@@ -3,6 +3,7 @@
   import type { OwnedCard } from '../../shared/types';
   import { socket } from '../socket';
   import { SUIT_SYMBOL } from '../utils/gameUtils';
+  import { playInFlight } from '../utils/playInFlight';
 
   export let ownedCard: OwnedCard;
   /** Only cards in your own hand are playable; cards on the table are display-only. */
@@ -32,12 +33,11 @@
     }
   }
 
-  let sent = false;
-  $: if (!isTurn) sent = false;
-
   function playCard() {
-    if (!isPlayable || sent) return;
-    sent = true; // guard against double taps while the server responds
+    // One card at a time: ignore taps while a play is on its way (GameBoard clears this when the
+    // turn moves on or the server rejects the play).
+    if (!isPlayable || $playInFlight) return;
+    playInFlight.set(true);
     socket.emit('playCard', { roomId: $roomId, card: ownedCard });
   }
 

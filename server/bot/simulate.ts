@@ -79,16 +79,6 @@ export function legalCards(hand: Card[], trick: PlayedCard[]): Card[] {
   return following.length ? following : hand;
 }
 
-export function cloneState(s: SimState): SimState {
-  return {
-    hands: s.hands.map((h) => h.slice()),
-    tricksWon: s.tricksWon.slice(),
-    targets: s.targets.slice(),
-    trick: s.trick.slice(),
-    next: s.next
-  };
-}
-
 /** Plays `card` for the seat whose turn it is, resolving the trick when it completes. Mutates `s`. */
 export function applyCard(s: SimState, card: Card): void {
   const seat = s.next;

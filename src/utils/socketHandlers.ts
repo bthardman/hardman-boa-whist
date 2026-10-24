@@ -1,5 +1,5 @@
 // Centralized socket event handlers
-import { gameState, localSocketId, localPlayerId, roomId } from '../store';
+import { gameState, localSocketId, playerToken, roomId, serverClockOffset, watching } from '../store';
 import { get } from 'svelte/store';
 import type { GameState } from '../../shared/types';
 import { socket } from '../socket';
@@ -20,13 +20,14 @@ const errorHandlers = new Map<string, Set<ErrorHandler>>();
 let periodicSyncTimer: ReturnType<typeof setInterval> | null = null;
 let visibilityHandler: (() => void) | null = null;
 let onlineHandler: (() => void) | null = null;
+/** Watching, the game has ended, and we've asked to join: don't ask again until we hear back. */
+let joinRequested = false;
 
 /** Re-joins the room (refreshes this socket's membership) and asks for the latest state. */
-function rejoinRoom() {
+export function rejoinRoom() {
   const currentRoomId = get(roomId);
-  const currentPlayerId = get(localPlayerId);
-  if (!currentRoomId || !currentPlayerId) return;
-  socket.emit('join_lobby', { roomId: currentRoomId, playerId: currentPlayerId });
+  if (!currentRoomId) return;
+  socket.emit('join_lobby', { roomId: currentRoomId, token: playerToken });
 }
 
 /**
@@ -39,14 +40,26 @@ export function registerErrorHandler(event: ErrorEvent, handler: ErrorHandler): 
   return () => errorHandlers.get(event)?.delete(handler);
 }
 
+function onState(state: GameState) {
+  if (typeof state.serverNow === 'number') serverClockOffset.set(state.serverNow - Date.now());
+  // Always assign a new array reference for Svelte reactivity
+  gameState.set({ ...state, players: [...state.players] });
+
+  if (state.players.some((p) => p.playerId === state.viewerId)) {
+    watching.set(false);
+    joinRequested = false;
+  } else if (get(watching) && !joinRequested && (state.state === 'lobby' || state.state === 'winner')) {
+    // The game we were watching has finished: join the table.
+    joinRequested = true;
+    rejoinRoom();
+  }
+}
+
 export function setupSocketHandlers() {
   // Avoid duplicate listeners in HMR/remount scenarios.
   cleanupSocketHandlers();
 
-  socket.on('state_updated', (state: GameState) => {
-    // Always assign a new array reference for Svelte reactivity
-    gameState.set({ ...state, players: [...state.players] });
-  });
+  socket.on('state_updated', onState);
 
   // We ALWAYS re-send join_lobby on (re)connect so the server re-adds this socket to the
   // room's broadcast group and refreshes the player's socketId. Without this, reconnected
@@ -67,6 +80,12 @@ export function setupSocketHandlers() {
       else showToast(data.message);
     });
   }
+
+  // A game is under way at this table: watch it until it finishes.
+  socket.on('watching', () => {
+    watching.set(true);
+    joinRequested = false;
+  });
 
   // The server moved this device to another table (a private game against computer players, or back).
   socket.on('room_changed', (data: { roomId: string }) => {
@@ -107,6 +126,7 @@ export function cleanupSocketHandlers() {
   socket.off('disconnect');
   socket.off('notice');
   socket.off('room_changed');
+  socket.off('watching');
   for (const event of ERROR_EVENTS) socket.off(event);
 
   if (periodicSyncTimer) {

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { gameState, localPlayer, roomId } from '../store';
   import { socket } from '../socket';
-  import { getWinnerAvatarUrl, getPlayerAvatarUrl } from '../avatarUtils';
+  import { getPlayerAvatarUrl } from '../avatarUtils';
   import { displayName } from '../../shared/players';
   import { registerErrorHandler } from '../utils/socketHandlers';
   import { showToast } from '../utils/toast';
@@ -53,7 +53,7 @@
       <section class="hero" aria-labelledby="winner-title">
         <div class="crown"><Icon name="crown" size={44} /></div>
         <div class="portrait">
-          <img class="avatar" src={getWinnerAvatarUrl(winner)} alt="" />
+          <img class="avatar" src={getPlayerAvatarUrl(winner)} alt="" />
         </div>
         <h1 id="winner-title">{youWon ? 'You win!' : `${winnerName} wins!`}</h1>
         <p class="sub">After {state?.roundNumber} {state?.roundNumber === 1 ? 'round' : 'rounds'}</p>

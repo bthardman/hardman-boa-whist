@@ -1,7 +1,5 @@
 // Game state machine for managing state transitions
-import type { GameState } from '../../shared/types.ts';
-
-export type State = 'lobby' | 'bidding' | 'tricks' | 'round_end' | 'winner';
+import type { GameState, State } from '../../shared/types.ts';
 
 export class GameStateMachine {
   static canTransition(currentState: State, newState: State): boolean {
@@ -22,17 +20,5 @@ export class GameStateMachine {
       return true;
     }
     return false;
-  }
-
-  static resetForNewRound(room: GameState): void {
-    room.currentTrick = [];
-    room.currentPlayer = room.firstPlayer;
-    room.state = 'bidding';
-    
-    // Reset player round-specific state
-    room.players.forEach(player => {
-      player.tricksWon = 0;
-      player.bid = undefined;
-    });
   }
 }

@@ -4,7 +4,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { AvatarChoice } from '../../shared/types';
   import { getAvatarData } from '../avatarData';
-  import { serverUrl } from '../socket';
+  import { serverUrl, socket } from '../socket';
 
   /** True after a refresh/reconnect mid-session: the server is awake, we're just catching up. */
   export let reconnecting = false;
@@ -23,10 +23,13 @@
   /** Only appear if connecting takes a moment, so an awake server doesn't flash this up. */
   const SHOW_AFTER_MS = 700;
   const LONG_WAIT_MS = 15_000;
+  /** Long past a normal wake-up: probably no internet, or the server is down. */
+  const UNREACHABLE_MS = 90_000;
 
   let visible = false;
   let messageIndex = 0;
   let longWait = false;
+  let unreachable = false;
   const timers: ReturnType<typeof setTimeout>[] = [];
   let messageTimer: ReturnType<typeof setInterval> | null = null;
   let stopped = false;
@@ -36,7 +39,11 @@
     while (!stopped) {
       try {
         const res = await fetch(`${serverUrl}/awake`, { cache: 'no-store' });
-        if (res.ok && (await res.json())?.ok) return;
+        if (res.ok && (await res.json())?.ok) {
+          // Awake: connect now rather than waiting for the next automatic retry (up to 5s away).
+          if (!socket.connected) socket.connect();
+          return;
+        }
       } catch {
         /* still asleep (or offline): try again shortly */
       }
@@ -47,6 +54,7 @@
   onMount(() => {
     timers.push(setTimeout(() => (visible = true), SHOW_AFTER_MS));
     timers.push(setTimeout(() => (longWait = true), LONG_WAIT_MS));
+    timers.push(setTimeout(() => (unreachable = true), UNREACHABLE_MS));
     messageTimer = setInterval(() => (messageIndex = (messageIndex + 1) % messages.length), 2600);
     if (!reconnecting) void wakeServer();
   });
@@ -71,14 +79,20 @@
       <img class="logo" src="/logo/logo.png" alt="Hardman Boa-Whist" />
     </div>
 
-    <div class="status">
-      <span class="spinner" aria-hidden="true"></span>
-      {#key messageIndex}
-        <p class="message">{reconnecting ? 'Loading the table…' : messages[messageIndex]}</p>
-      {/key}
-    </div>
-    {#if longWait && !reconnecting}
-      <p class="hint">The game server naps when nobody's playing and can take up to a minute to wake. Nearly there!</p>
+    {#if unreachable}
+      <p class="message">Can't reach the game server</p>
+      <p class="hint">Check your internet connection, then try again.</p>
+      <button class="btn btn-primary" type="button" on:click={() => window.location.reload()}>Try again</button>
+    {:else}
+      <div class="status">
+        <span class="spinner" aria-hidden="true"></span>
+        {#key messageIndex}
+          <p class="message">{reconnecting ? 'Loading the table…' : messages[messageIndex]}</p>
+        {/key}
+      </div>
+      {#if longWait && !reconnecting}
+        <p class="hint">The game server naps when nobody's playing and can take up to a minute to wake. Nearly there!</p>
+      {/if}
     {/if}
   {/if}
 </main>

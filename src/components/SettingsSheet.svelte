@@ -8,6 +8,8 @@
 
   /** 'lobby' shows the target score and "clear seats"; 'game' shows "end game". */
   export let context: 'lobby' | 'game';
+  /** False while watching a game you're not in: only this device's own settings apply. */
+  export let member = true;
 
   const dispatch = createEventDispatcher<{ close: void }>();
   const speeds: { value: GameSpeed; label: string }[] = [
@@ -73,6 +75,7 @@
       </fieldset>
     {/if}
 
+    {#if member}
     <fieldset>
       <legend>Game pace <span class="hint">for everyone at the table</span></legend>
       <div class="segmented">
@@ -83,6 +86,7 @@
         {/each}
       </div>
     </fieldset>
+    {/if}
 
     <fieldset>
       <legend>Text size <span class="hint">on this device</span></legend>
@@ -114,15 +118,17 @@
       </label>
     </fieldset>
 
-    <div class="danger">
-      <button type="button" class="btn btn-danger btn-block" on:click={runDangerAction}>
-        {#if confirmingDanger}
-          {context === 'lobby' ? 'Tap again to clear every seat' : 'Tap again to end the game for everyone'}
-        {:else}
-          {context === 'lobby' ? 'Clear all seats' : 'End game'}
-        {/if}
-      </button>
-    </div>
+    {#if member}
+      <div class="danger">
+        <button type="button" class="btn btn-danger btn-block" on:click={runDangerAction}>
+          {#if confirmingDanger}
+            {context === 'lobby' ? 'Tap again to clear every seat' : 'Tap again to end the game for everyone'}
+          {:else}
+            {context === 'lobby' ? 'Clear all seats' : 'End game'}
+          {/if}
+        </button>
+      </div>
+    {/if}
   </div>
 </div>
 
