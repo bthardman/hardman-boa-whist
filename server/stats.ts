@@ -1,14 +1,61 @@
 // Stats: tallies each seat's rounds during a game, and reports each finished game to the stats
 // API (a Cloudflare Pages Function backed by D1), retrying for a while if it can't be reached.
 import { randomUUID } from 'crypto';
-import type { GameState } from '../shared/types.ts';
-import type { GameRecord, GameRecordPlayer, RecordPlayerKind } from '../shared/stats.ts';
+import type { GameState, OwnedCard } from '../shared/types.ts';
+import { BID_SLOTS, highBidFrom, type GameRecord, type GameRecordPlayer, type RecordPlayerKind } from '../shared/stats.ts';
+import { cardValue } from './utils/cardUtils.ts';
 import { displayName } from '../shared/players.ts';
 import type { Ctx } from './context.ts';
 
-export type SeatTally = Pick<GameRecordPlayer, 'roundsMade' | 'zeroBids' | 'zeroBidsMade' | 'bidTotal' | 'tricksTotal'>;
+export type SeatTally = Pick<
+  GameRecordPlayer,
+  'roundsMade' | 'zeroBids' | 'zeroBidsMade' | 'bidTotal' | 'tricksTotal' | 'sliders' | 'bidCounts' | 'earlyRounds' | 'lastHearts' | 'highBids'
+>;
 
-export const emptyTally = (): SeatTally => ({ roundsMade: 0, zeroBids: 0, zeroBidsMade: 0, bidTotal: 0, tricksTotal: 0 });
+export const emptyTally = (): SeatTally => ({
+  roundsMade: 0,
+  zeroBids: 0,
+  zeroBidsMade: 0,
+  bidTotal: 0,
+  tricksTotal: 0,
+  sliders: 0,
+  earlyRounds: 0,
+  lastHearts: 0,
+  highBids: 0,
+  bidCounts: new Array(BID_SLOTS).fill(0)
+});
+
+const SLIDER_MAX = cardValue('7');
+
+/**
+ * Sliders: a trick won by a card of 7 or lower of the suit led (a low trump ruffing in doesn't count).
+ * Everyone who played after that card went under it or threw away, so each of them gets a slider.
+ *
+ * Also early tricks: the winner reaching their bid (1+) within the first bid + 1 tricks of the round;
+ * and last-trick hearts: winning the round's final trick with a heart to make their bid exactly.
+ * Call this before the trick is added to the winner's tricks and to completedTricks.
+ */
+export function tallyTrick(ctx: Ctx, room: GameState, trick: OwnedCard[], winnerSeat: number): void {
+  const tallies = ctx.tallies.get(room.roomId);
+  const winnerId = room.players[winnerSeat]?.playerId;
+  if (!tallies || !winnerId || !trick.length) return;
+  const winner = room.players[winnerSeat];
+  const trickNumber = (room.completedTricks?.length ?? 0) + 1;
+  if (winner.bid && winner.tricksWon + 1 === winner.bid && trickNumber <= winner.bid + 1 && tallies[winnerSeat]) {
+    tallies[winnerSeat].earlyRounds++;
+  }
+  const lastTrick = room.players.every((p) => p.hand.length === 0);
+  const winningCard = trick.find((c) => c.playerId === winnerId)?.card;
+  if (lastTrick && winningCard?.suit === 'hearts' && winner.tricksWon + 1 === winner.bid && tallies[winnerSeat]) {
+    tallies[winnerSeat].lastHearts++;
+  }
+  const at = trick.findIndex((c) => c.playerId === winnerId);
+  const winning = trick[at];
+  if (!winning || winning.card.suit !== trick[0].card.suit || cardValue(winning.card.value) > SLIDER_MAX) return;
+  const sliders = trick.slice(at + 1).map((c) => room.players.findIndex((p) => p.playerId === c.playerId));
+  if (!sliders.length) return;
+  for (const seat of sliders) if (tallies[seat]) tallies[seat].sliders++;
+}
 
 /** Adds the round that just finished to each seat's tally (seats don't change during a game). */
 export function tallyRound(ctx: Ctx, room: GameState): void {
@@ -20,6 +67,8 @@ export function tallyRound(ctx: Ctx, room: GameState): void {
     const bid = p.bid ?? 0;
     const made = bid === p.tricksWon;
     t.bidTotal += bid;
+    if (bid < BID_SLOTS) t.bidCounts[bid]++;
+    if (bid >= highBidFrom(room.players.length)) t.highBids++;
     t.tricksTotal += p.tricksWon;
     if (made) t.roundsMade++;
     if (bid === 0) {
@@ -44,7 +93,8 @@ export function buildGameRecord(ctx: Ctx, room: GameState): GameRecord {
       name: displayName(p),
       score,
       place: 1 + scores.filter((s) => s > score).length,
-      ...(tallies[seat] ?? emptyTally())
+      ...(tallies[seat] ?? emptyTally()),
+      bidCounts: [...(tallies[seat] ?? emptyTally()).bidCounts]
     };
   });
   const winnerSeat = room.winner ? room.players.indexOf(room.winner) : -1;

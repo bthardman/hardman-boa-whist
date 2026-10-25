@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { io as connect, type Socket } from 'socket.io-client';
 import { randomUUID } from 'crypto';
 import type { GameState } from '../shared/types.ts';
-import type { GameRecord } from '../shared/stats.ts';
+import type { GameRecord, TableSettings } from '../shared/stats.ts';
 import { FAMILY_ROOM_ID, practiceRoomId } from '../shared/players.ts';
 import { createGameServer, type GameServer, type GameServerOptions } from './gameServer.ts';
 import { publicIdFor } from './identity.ts';
@@ -323,6 +323,24 @@ describe('game server', () => {
     brad.emit('rematch_game', { roomId: FAMILY_ROOM_ID });
     const state = await brad.until((s) => s.state === 'bidding', 'rematch dealt');
     expect(state.players.some((p) => p.playerId === rowan.id)).toBe(false);
+  });
+
+  it('remembers the family table settings across server restarts', async () => {
+    const saved: TableSettings[] = [];
+    const settingsStore = {
+      load: async () => ({ winningScore: 2, gameSpeed: 'fast', botDifficulty: 'hard' }) as TableSettings,
+      save: async (s: TableSettings) => void saved.push(s)
+    };
+    const { url } = await startServer({ ...FAST, settingsStore });
+    await sleep(50); // the saved settings load as the server starts
+    const brad = await device(url, { roomId: FAMILY_ROOM_ID });
+    const lobby = await brad.until((st) => st.roomId === FAMILY_ROOM_ID, 'lobby');
+    expect(lobby).toMatchObject({ winningScore: 2, gameSpeed: 'fast', botDifficulty: 'hard' });
+
+    brad.emit('set_game_speed', { roomId: FAMILY_ROOM_ID, gameSpeed: 'slow' });
+    brad.emit('set_winning_score', { roomId: FAMILY_ROOM_ID, winningScore: 4 });
+    await sleep(1800); // saves are grouped together
+    expect(saved).toEqual([{ winningScore: 4, gameSpeed: 'slow', botDifficulty: 'hard' }]);
   });
 
   it('lets visitors join under a name (not a family name, not one already in use)', async () => {

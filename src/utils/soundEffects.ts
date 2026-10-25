@@ -1,23 +1,23 @@
 // Game sounds. Played through the Web Audio API so the volume settings work everywhere: iPhones
 // and iPads ignore the volume of plain <audio> elements. Falls back to <audio> if Web Audio is missing.
-import winHandSfx from '../assets/sounds/win-hand.wav';
-import loseHandSfx from '../assets/sounds/lose-hand.wav';
-import dealingCards1Sfx from '../assets/sounds/dealing-cards-1.wav';
-import dealingCards2Sfx from '../assets/sounds/dealing-cards-2.wav';
-import dealingCards3Sfx from '../assets/sounds/dealing-cards-3.wav';
-import dealingCards4Sfx from '../assets/sounds/dealing-cards-4.wav';
-import dealingCards5Sfx from '../assets/sounds/dealing-cards-5.wav';
-import winTrickSfx from '../assets/sounds/win-trick.wav';
-import loseTrickSfx from '../assets/sounds/lose-trick.wav';
-import gameEndSfx from '../assets/sounds/game-end.wav';
-import bidDisplaySfx from '../assets/sounds/bid-display.wav';
-import bidReceivedSfx from '../assets/sounds/bid-received.wav';
-import yourTurnSfx from '../assets/sounds/your-turn.wav';
-import buttonSfx from '../assets/sounds/button.wav';
-import avatarSelectSfx from '../assets/sounds/avatar-select.wav';
-import roundHandStartSfx from '../assets/sounds/round-hand-start.wav';
-import gameStartSfx from '../assets/sounds/game-start.wav';
-import yourGoSfx from '../assets/sounds/your-go.wav';
+import winHandSfx from '../assets/sounds/win-hand.mp3';
+import loseHandSfx from '../assets/sounds/lose-hand.mp3';
+import dealingCards1Sfx from '../assets/sounds/dealing-cards-1.mp3';
+import dealingCards2Sfx from '../assets/sounds/dealing-cards-2.mp3';
+import dealingCards3Sfx from '../assets/sounds/dealing-cards-3.mp3';
+import dealingCards4Sfx from '../assets/sounds/dealing-cards-4.mp3';
+import dealingCards5Sfx from '../assets/sounds/dealing-cards-5.mp3';
+import winTrickSfx from '../assets/sounds/win-trick.mp3';
+import loseTrickSfx from '../assets/sounds/lose-trick.mp3';
+import gameEndSfx from '../assets/sounds/game-end.mp3';
+import bidDisplaySfx from '../assets/sounds/bid-display.mp3';
+import bidReceivedSfx from '../assets/sounds/bid-received.mp3';
+import yourTurnSfx from '../assets/sounds/your-turn.mp3';
+import buttonSfx from '../assets/sounds/button.mp3';
+import avatarSelectSfx from '../assets/sounds/avatar-select.mp3';
+import roundHandStartSfx from '../assets/sounds/round-hand-start.mp3';
+import gameStartSfx from '../assets/sounds/game-start.mp3';
+import yourGoSfx from '../assets/sounds/your-go.mp3';
 import { readVolumePrefs } from './playerPrefsCookies';
 
 /** "fx" follows the Sound effects slider, "music" the Music slider. */

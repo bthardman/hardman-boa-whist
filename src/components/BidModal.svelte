@@ -19,7 +19,7 @@
   // If the server rejects the bid, unlock the keypad so a different number can be chosen.
   const stopListening = registerErrorHandler('bid_error', (message) => {
     submitted = false;
-    showToast(message);
+    showToast(message, 'error');
   });
   onDestroy(stopListening);
 

@@ -1,7 +1,7 @@
 <script lang="ts">
   // Everyone's stats (family games and practice kept apart) and the recent games.
   import { createEventDispatcher, onMount } from 'svelte';
-  import type { GameKind, PersonStats, RecentGame, StatsResponse } from '../../shared/stats';
+  import { BADGE_MIN_ROUNDS, badgesFor, usualBid, type BadgeId, type GameKind, type PersonStats, type RecentGame, type StatsResponse } from '../../shared/stats';
   import { AvatarChoice } from '../../shared/types';
   import { familyName } from '../../shared/players';
   import { getAvatarData } from '../avatarData';
@@ -10,12 +10,20 @@
   import Icon from './ui/Icon.svelte';
 
   const dispatch = createEventDispatcher<{ close: void }>();
-  type Tab = 'family' | 'practice' | 'recent';
+  type Tab = 'family' | 'rivals' | 'practice' | 'recent';
   const tabs: { value: Tab; label: string }[] = [
     { value: 'family', label: 'Family' },
+    { value: 'rivals', label: 'Rivals' },
     { value: 'practice', label: 'Practice' },
     { value: 'recent', label: 'Recent' }
   ];
+  const BADGE_ICONS: Record<BadgeId, string> = {
+    slider: '🛷',
+    early: '🐦',
+    lastHeart: '❤️',
+    highCaller: '📈',
+    zeroCaller: '0️⃣'
+  };
   let tab: Tab = 'family';
   let data: StatsResponse | null = null;
   let failed = false;
@@ -50,7 +58,11 @@
       })
       .sort((a, b) => b.s.wins - a.s.wins || winRate(b.s) - winRate(a.s) || b.s.games - a.s.games);
   }
-  $: rows = data && tab !== 'recent' ? ranked(data, tab) : [];
+  $: rows = data && (tab === 'family' || tab === 'practice') ? ranked(data, tab) : [];
+  /** Head-to-head pairs, most games together first. */
+  $: rivals = (data?.headToHead ?? [])
+    .slice()
+    .sort((x, y) => y.aWins + y.bWins + y.ties - (x.aWins + x.bWins + x.ties) || personName(x.a).localeCompare(personName(y.a)));
 
   const when = (ms: number) =>
     new Date(ms).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
@@ -114,6 +126,28 @@
           {/each}
         </ol>
       {/if}
+    {:else if tab === 'rivals'}
+      {#if !rivals.length}
+        <p class="note">Head-to-head records appear once two family members have finished a game together.</p>
+      {:else}
+        <p class="note small">Who finished higher in the family games they played together.</p>
+        <ol class="rivals">
+          {#each rivals as r (r.a + r.b)}
+            <li>
+              <span class="side" class:leads={r.aWins > r.bWins}>
+                <img src={personPicture(r.a)} alt="" />
+                <span>{personName(r.a)}</span>
+              </span>
+              <span class="score num">{r.aWins} – {r.bWins}</span>
+              <span class="side right" class:leads={r.bWins > r.aWins}>
+                <span>{personName(r.b)}</span>
+                <img src={personPicture(r.b)} alt="" />
+              </span>
+              {#if r.ties}<span class="ties">{r.ties} {r.ties === 1 ? 'tie' : 'ties'}</span>{/if}
+            </li>
+          {/each}
+        </ol>
+      {/if}
     {:else if !rows.length}
       <p class="note">
         {tab === 'practice' ? 'No practice games yet. Play on your own against the computer and they show up here.' : 'No family games yet. Finish a game and it shows up here.'}
@@ -121,6 +155,8 @@
     {:else}
       <ol class="people">
         {#each rows as { key, s }, i (key)}
+          {@const badges = badgesFor(s)}
+          {@const usual = usualBid(s)}
           <li>
             <button type="button" class="person" aria-expanded={expanded === key} on:click={() => (expanded = expanded === key ? null : key)}>
               <span class="rank num">{i + 1}</span>
@@ -134,15 +170,26 @@
                 <span class="sub">won</span>
               </span>
             </button>
+            {#if badges.length || usual !== null}
+              <ul class="badges" aria-label="Badges">
+                {#each badges as b (b.id)}
+                  <li class="badge {b.id}"><span aria-hidden="true">{BADGE_ICONS[b.id]}</span> {b.label}</li>
+                {/each}
+                {#if usual !== null}<li class="badge usual">Usually bids {usual}</li>{/if}
+              </ul>
+            {/if}
             {#if expanded === key}
-              <dl class="details">
-                <div><dt>Bids hit exactly</dt><dd>{pct(s.roundsMade, s.rounds)} <span class="sub">({s.roundsMade} of {s.rounds} rounds)</span></dd></div>
-                <div><dt>Average bid</dt><dd>{s.rounds ? (s.bidTotal / s.rounds).toFixed(1) : '–'}</dd></div>
-                <div><dt>Bids of 0 made</dt><dd>{s.zeroBidsMade} of {s.zeroBids}</dd></div>
-                <div><dt>Best winning streak</dt><dd>{s.bestStreak}</dd></div>
-                <div><dt>Current streak</dt><dd>{s.currentStreak}</dd></div>
-                <div><dt>Points scored</dt><dd>{s.points}</dd></div>
-              </dl>
+              <ul class="explain">
+                {#each badges as b (b.id)}
+                  <li><strong>{BADGE_ICONS[b.id]} {b.label}:</strong> {b.detail}.</li>
+                {:else}
+                  <li>
+                    {s.rounds < BADGE_MIN_ROUNDS
+                      ? `Badges appear after ${BADGE_MIN_ROUNDS} rounds (${s.rounds} so far).`
+                      : 'No badges yet: nothing they do much more than everyone else.'}
+                  </li>
+                {/each}
+              </ul>
             {/if}
           </li>
         {/each}
@@ -178,7 +225,7 @@
   /* Same look as the settings sheet's choices. */
   .segmented {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 4px;
     padding: 4px;
     border-radius: 12px;
@@ -261,20 +308,109 @@
   .big {
     font-size: 1.6rem;
   }
-  .details {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.5rem 1rem;
-    margin: 0;
-    padding: 0.2rem 0.9rem 0.8rem;
+  .badges {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin: -0.15rem 0 0;
+    /* Lined up under the name, past the rank and picture. */
+    padding: 0 0.7rem 0.6rem calc(0.5rem + 1.4rem + 40px + 1.2rem);
   }
-  .details dt {
-    color: var(--ink-soft);
-    font-size: 0.85rem;
-  }
-  .details dd {
-    margin: 0;
+  .badge {
+    padding: 0.1rem 0.55rem;
+    border-radius: 999px;
+    background: #fff1d6;
+    color: #7a4b00;
+    font-size: 0.82rem;
     font-weight: 700;
+    white-space: nowrap;
+  }
+  .badge.usual {
+    background: #e4ebf2;
+    color: var(--ink-soft);
+  }
+  .explain {
+    margin: 0;
+    padding: 0 0.9rem 0.8rem calc(0.5rem + 1.4rem + 40px + 1.2rem);
+    display: grid;
+    gap: 0.3rem;
+    color: var(--ink-soft);
+    font-size: 0.9rem;
+    list-style: none;
+  }
+  .explain strong {
+    color: var(--ink);
+  }
+  .note.small {
+    margin-top: 0;
+    font-size: 0.9rem;
+  }
+  .rivals {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 6px;
+  }
+  .rivals li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0.7rem;
+    border-radius: 12px;
+    background: white;
+    box-shadow: inset 0 0 0 1px var(--paper-line);
+  }
+  .side {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-width: 0;
+    color: var(--ink-soft);
+    font-weight: 600;
+  }
+  .side.right {
+    justify-content: flex-end;
+  }
+  .side.leads {
+    color: var(--ink);
+    font-weight: 800;
+  }
+  .side span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .side img {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex: 0 0 auto;
+  }
+  .rivals .score {
+    font-size: 1.3rem;
+    white-space: nowrap;
+    text-align: center;
+  }
+  .ties {
+    grid-column: 1 / -1;
+    justify-self: center;
+    margin-top: -0.3rem;
+    color: var(--ink-soft);
+    font-size: 0.8rem;
+  }
+  /* Narrow phones: less indent for the badges, and names without pictures in Rivals so they fit. */
+  @media (max-width: 420px) {
+    .badges,
+    .explain {
+      padding-left: 0.8rem;
+    }
+    .side img {
+      display: none;
+    }
   }
   .games > li {
     padding: 0.6rem 0.8rem;

@@ -90,6 +90,9 @@ Tap **Settings** in the lobby, or ⚙️ during a game.
 
 - **Points to win** (1–5): set in the lobby before the game starts.
 - **Game pace** (Relaxed, Normal, Quick): how long the table pauses between tricks and rounds. Applies to everyone.
+- **Computer player difficulty** (in **Computer players**).
+
+The family table remembers its points to win, pace and computer difficulty (saved with the stats), so they're still set next time, even after the server has restarted or gone to sleep.
 - **Text size**, **sound effects volume**, **music volume**, **flash the screen edge when it's my turn** and **keep the screen on during games**: these only apply to your own device.
 
 The 📊 button during a game shows the full scoreboard.
@@ -110,9 +113,22 @@ The game can sit on your home screen like an app and open full screen, with no b
 
 Tap **Stats** in the lobby, or **See everyone's stats** after a game.
 
-- **Family:** for each family member, games played, wins and win rate. Tap someone for more: how often they hit their bid exactly, their average bid, how many bids of 0 they made, their best and current winning streaks, and points scored. Every finished game with two or more people counts, with or without computer players.
-- **Practice:** the same, for games played alone against the computer, kept separate so practice doesn't inflate anyone's record.
+- **Family:** each family member's wins, games and win rate, the bid they make most often ("Usually bids 1"), and any **badges** they've earned. Tap someone to see what their badges mean. Every finished game with two or more people counts, with or without computer players.
+- **Rivals:** head-to-head records: for each pair of family members, who finished higher in the family games they both played.
+- **Practice:** the same as Family, for games played alone against the computer, kept separate so practice doesn't inflate anyone's record.
 - **Recent:** the last 20 finished games: when, who won, and everyone's final score. Guests appear here by name, but don't get stats of their own.
+
+**Badges** only show the habits someone actually has:
+
+| Badge | Earned by |
+| --- | --- |
+| 🛷 Slider | Sliding: a trick is won by a 7 or lower, and you played after it and went under or threw away rather than beat it |
+| 🐦 Early bird | Getting your tricks in early: reaching your bid within the first (bid + 1) tricks, e.g. bid 2 and win 2 of the first 3 |
+| ❤️ Final card heart | Winning the last trick of a round with a heart to make your bid exactly |
+| 📈 High caller | Bidding high for the table: 5+ with two players, 4+ with three or four, 3+ with five or more |
+| 0️⃣ Zero caller | Bidding 0 |
+
+How often these happen depends a lot on the table (two-player games are full of sliders), so a badge means doing it noticeably more than your fair share at the tables you played at: at least 1.3 times as often (1.5 for Final card heart), more than a couple of times, and after at least 10 rounds.
 
 Only games played to the end count. A game that's ended early (**End game**, or everyone leaving) isn't recorded.
 
@@ -190,7 +206,7 @@ STATS_URL=http://localhost:8788 STATS_SECRET=local-stats-secret npm run start-se
 npm test
 ```
 
-This runs the rule tests (bidding, tricks, scoring), the server tests (a real server with real connections: joining, watching, taking over a seat, guests, private games, abandoned games, finished games reaching the stats, and that nobody can act at a table they're not at), the stats tests (storage, totals, streaks, and that only the game server can record results) and the computer-player tests. `npm run typecheck` checks the types. GitHub Actions runs both on every push.
+This runs the rule tests (bidding, tricks, scoring), the server tests (a real server with real connections: joining, watching, taking over a seat, guests, private games, abandoned games, finished games reaching the stats, and that nobody can act at a table they're not at), the stats tests (storage, totals, streaks, sliders and the other badges, head-to-head, saved table settings, upgrading an older database, and that only the game server can record results) and the computer-player tests. `npm run typecheck` checks the types. GitHub Actions runs both on every push.
 
 ### Project layout
 
@@ -204,15 +220,16 @@ This runs the rule tests (bidding, tricks, scoring), the server tests (a real se
 | `server/tables.ts` | The family table, private practice tables, watchers, taking over a seat |
 | `server/view.ts` | What each device is sent (only its own hand) |
 | `server/identity.ts` | Each device's secret token and the public id everyone else sees |
-| `server/stats.ts` | Tallies each round and sends every finished game to the stats API |
+| `server/stats.ts` | Tallies each trick and round (sliders, early tricks, bids…) and sends every finished game to the stats API |
+| `server/settings.ts` | Loads and saves the family table's settings, so a restart doesn't reset them |
 | `server/utils/` | Game rules: dealing, follow-suit and trick winners, bidding rules, scoring |
 | `server/bot/` | Computer players: what each one may see, the Easy/Medium/Hard strategies, and the Monte Carlo search |
 | `shared/types.ts` | Types shared by the client and server |
 | `shared/stats.ts` | The finished-game record and the stats the app shows |
-| `functions/api/` | The stats API, run by Cloudflare Pages: `POST /api/games` (from the game server) and `GET /api/stats` |
+| `functions/api/` | The stats API, run by Cloudflare Pages: `POST /api/games` (from the game server), `GET /api/stats`, and `/api/settings` (the family table's saved settings) |
 | `stats/` | Stats storage (Cloudflare D1 / SQLite), plus a local version for tests and `npm run stats-server` |
 | `src/` | Svelte front end (lobby, game board, bidding, scoreboard, settings, stats) |
-| `public/` | Card images, player avatars, fonts, the logo, and the app icons and manifest |
+| `public/` | Card images, player avatars (WebP), fonts, the logo, the app icons and manifest, and `_headers` (how long phones keep each file) |
 
 The server is authoritative: it shuffles and deals, validates every bid and card, works out who won each trick, and only sends each player their own hand. Each device proves who it is with a secret token that's never shown to anyone else, so nobody can take over someone's seat or see their cards.
 
@@ -227,7 +244,7 @@ The front end and the game server are hosted separately, both on free plans:
 
 Both redeploy automatically when `main` changes. In Render, set **Auto-Deploy** to **After CI checks pass** so a failing build never reaches the live game. A deploy restarts the server, which ends any game in progress, so avoid pushing mid-game. Render's free plan puts the server to sleep after 15 minutes with no traffic (an open game keeps it awake). Because the page itself comes from Cloudflare, it loads instantly and shows its own "waking up" screen while the server starts, calling `/awake` to wake it. The Render address still serves the game too, as a fallback.
 
-**Stats** are stored in a free [Cloudflare D1](https://developers.cloudflare.com/d1/) database, next to the front end. The tables are created automatically the first time a game is saved. When a game finishes, the game server sends the result to `POST /api/games` on the Pages site, signed with `STATS_SECRET` so nobody else can post results; it retries for a while if Cloudflare can't be reached. The app reads `GET /api/stats`. To set it up once:
+**Stats** are stored in a free [Cloudflare D1](https://developers.cloudflare.com/d1/) database, next to the front end. The tables are created automatically the first time a game is saved. When a game finishes, the game server sends the result to `POST /api/games` on the Pages site, signed with `STATS_SECRET` so nobody else can post results; it retries for a while if Cloudflare can't be reached. The app reads `GET /api/stats`. The family table's settings are saved the same way (`/api/settings`, also signed). Databases made before newer stats were added are upgraded automatically. To set it up once:
 
 1. In Cloudflare, go to **Storage & Databases → D1** and create a database (e.g. `boa-whist-stats`).
 2. In the Pages project, go to **Settings → Bindings**, add a **D1 database** binding with the variable name `DB`, and pick that database.

@@ -18,7 +18,7 @@
     soundEffects.playGameEnd();
     stopListening = registerErrorHandler('start_game_error', (message) => {
       confirmMode = null;
-      showToast(message);
+      showToast(message, 'error');
     });
   });
   onDestroy(() => stopListening?.());

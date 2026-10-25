@@ -4,6 +4,7 @@ import http from 'http';
 import type { AddressInfo } from 'net';
 import { onRequestPost } from '../functions/api/games.ts';
 import { onRequestGet } from '../functions/api/stats.ts';
+import * as settingsApi from '../functions/api/settings.ts';
 import { sqliteD1 } from './sqliteD1.ts';
 
 export type LocalStatsServer = { url: string; close(): Promise<void> };
@@ -17,12 +18,14 @@ export async function startLocalStatsServer(options: { secret: string; port?: nu
     const request = new Request(url, {
       method: req.method,
       headers: req.headers as Record<string, string>,
-      body: req.method === 'POST' ? Buffer.concat(chunks) : undefined
+      body: req.method === 'POST' || req.method === 'PUT' ? Buffer.concat(chunks) : undefined
     });
     const path = new URL(url).pathname;
     let response: Response;
     if (path === '/api/games' && req.method === 'POST') response = await onRequestPost({ request, env });
     else if (path === '/api/stats' && req.method === 'GET') response = await onRequestGet({ request, env });
+    else if (path === '/api/settings' && req.method === 'GET') response = await settingsApi.onRequestGet({ request, env });
+    else if (path === '/api/settings' && req.method === 'PUT') response = await settingsApi.onRequestPut({ request, env });
     else response = new Response('Not found', { status: 404 });
     res.writeHead(response.status, Object.fromEntries(response.headers));
     res.end(Buffer.from(await response.arrayBuffer()));

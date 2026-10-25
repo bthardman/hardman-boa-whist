@@ -4,6 +4,7 @@ import type { Server, Socket } from 'socket.io';
 import type { RoundLogEntry } from './bot/index.ts';
 import type { GameRecord } from '../shared/stats.ts';
 import type { SeatTally } from './stats.ts';
+import type { SettingsStore } from './settings.ts';
 import { RoomManager } from './utils/roomManager.ts';
 
 export type Timings = {
@@ -60,6 +61,9 @@ export type Ctx = {
   tallies: Map<string, SeatTally[]>;
   /** Where finished games are sent for stats (unset: stats are off, e.g. local play). */
   reportGame?: (record: GameRecord) => void;
+  /** Where the family table's settings are saved (unset: they last until the server restarts). */
+  settingsStore?: SettingsStore;
+  settingsSaveTimer?: Timer;
   /** setTimeout that the server can cancel all at once when it shuts down. */
   setTimer(fn: () => void, ms: number): Timer;
   clearTimer(timer: Timer | undefined): void;

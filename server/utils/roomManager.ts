@@ -1,10 +1,13 @@
 // Room management and state
 import type { GameState, Player } from '../../shared/types.ts';
+import type { TableSettings } from '../../shared/stats.ts';
 import { AvatarChoice } from '../../shared/types.ts';
 import { isSeated } from '../../shared/players.ts';
 
 export class RoomManager {
   private rooms: Record<string, GameState> = {};
+  /** The family's saved settings, which new tables start with. */
+  settingsForNewRooms: TableSettings = { winningScore: 5, gameSpeed: 'normal', botDifficulty: 'medium' };
 
   getRoom(roomId: string): GameState | undefined {
     return this.rooms[roomId];
@@ -24,9 +27,7 @@ export class RoomManager {
       state: 'lobby',
       scoreboard: {},
       roundNumber: 0,
-      winningScore: 5,
-      gameSpeed: 'normal',
-      botDifficulty: 'medium',
+      ...this.settingsForNewRooms,
       gameId: 0
     };
 

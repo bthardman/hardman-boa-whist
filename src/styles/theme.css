@@ -7,25 +7,25 @@
   font-family: 'Barlow Condensed';
   font-weight: 600;
   font-display: swap;
-  src: url('/fonts/barlow-condensed-semibold.woff') format('woff');
+  src: url('/fonts/barlow-condensed-semibold.woff2') format('woff2'), url('/fonts/barlow-condensed-semibold.woff') format('woff');
 }
 @font-face {
   font-family: 'Barlow Condensed';
   font-weight: 700;
   font-display: swap;
-  src: url('/fonts/barlow-condensed-bold.woff') format('woff');
+  src: url('/fonts/barlow-condensed-bold.woff2') format('woff2'), url('/fonts/barlow-condensed-bold.woff') format('woff');
 }
 @font-face {
   font-family: 'Barlow Condensed';
   font-weight: 800;
   font-display: swap;
-  src: url('/fonts/barlow-condensed-extrabold.woff') format('woff');
+  src: url('/fonts/barlow-condensed-extrabold.woff2') format('woff2'), url('/fonts/barlow-condensed-extrabold.woff') format('woff');
 }
 @font-face {
   font-family: 'Figtree';
   font-weight: 300 900;
   font-display: swap;
-  src: url('/fonts/figtree-variable.woff') format('woff');
+  src: url('/fonts/figtree-variable.woff2') format('woff2'), url('/fonts/figtree-variable.woff') format('woff');
 }
 
 :root {

@@ -7,6 +7,7 @@ import type { Ctx, GameSocket } from './context.ts';
 import { cancelStartCountdown } from './flow.ts';
 import { hasConnectedHuman } from './automation.ts';
 import { broadcastState, sendState } from './view.ts';
+import { saveTableSettingsSoon } from './settings.ts';
 
 /** You may join the family table, or your own practice table, and nothing else. */
 export function canJoinRoom(roomId: string, playerId: string): boolean {
@@ -93,6 +94,7 @@ export function returnToFamilyTable(ctx: Ctx, practice: GameState): void {
     family.players = family.players.filter((p) => !p.isBot);
     for (const _ of bots) addBot(family);
     family.botDifficulty = practice.botDifficulty;
+    saveTableSettingsSoon(ctx, family);
   }
   if (familyFree) cancelStartCountdown(ctx, family);
   broadcastState(ctx, family);

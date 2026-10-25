@@ -18,6 +18,7 @@ import {
   takeOverSeat
 } from './tables.ts';
 import { broadcastState, nameOf, notifyRoom, sendState } from './view.ts';
+import { saveTableSettingsSoon } from './settings.ts';
 
 /** Sent with most events: which table the device thinks it's at. */
 type RoomPayload = { roomId?: unknown };
@@ -201,6 +202,7 @@ export function registerSocketHandlers(ctx: Ctx, rawSocket: Socket): void {
     const nextScore = Number(winningScore);
     if (!Number.isFinite(nextScore)) return;
     seat.room.winningScore = Math.max(1, Math.min(5, Math.floor(nextScore)));
+    saveTableSettingsSoon(ctx, seat.room);
     broadcastState(ctx, seat.room);
   });
 
@@ -208,6 +210,7 @@ export function registerSocketHandlers(ctx: Ctx, rawSocket: Socket): void {
     const seat = currentSeat(roomId);
     if (!seat) return;
     seat.room.gameSpeed = gameSpeed === 'slow' || gameSpeed === 'fast' ? gameSpeed : 'normal';
+    saveTableSettingsSoon(ctx, seat.room);
     broadcastState(ctx, seat.room);
   });
 
@@ -216,6 +219,7 @@ export function registerSocketHandlers(ctx: Ctx, rawSocket: Socket): void {
     if (!seat || seat.room.state !== 'lobby') return;
     if (difficulty !== 'easy' && difficulty !== 'medium' && difficulty !== 'hard') return;
     seat.room.botDifficulty = difficulty as BotDifficulty;
+    saveTableSettingsSoon(ctx, seat.room);
     broadcastState(ctx, seat.room);
   });
 

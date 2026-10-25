@@ -55,7 +55,7 @@
 
 {#if joinBlockedMessage}
   <main class="notice" role="alert">
-    <img src="/logo/logo.png" alt="Hardman Boa-Whist" />
+    <img src="/logo/logo.webp" alt="Hardman Boa-Whist" />
     <h1>Can't join the table</h1>
     <p>{joinBlockedMessage}</p>
     <button class="btn btn-primary" type="button" on:click={() => window.location.reload()}>Try again</button>
@@ -74,9 +74,12 @@
   <div class="connection" role="status">Reconnecting…</div>
 {/if}
 
-<div class="toasts" aria-live="assertive">
+<div class="toasts" aria-live="polite">
   {#each $toasts as toast (toast.id)}
-    <div class="toast" transition:fly={{ y: -16, duration: 200 }}>{toast.message}</div>
+    <div class="toast {toast.kind}" role={toast.kind === 'error' ? 'alert' : 'status'} transition:fly={{ y: -16, duration: 200 }}>
+      <span class="toast-icon" aria-hidden="true">{toast.kind === 'error' ? '!' : 'i'}</span>
+      <span>{toast.message}</span>
+    </div>
   {/each}
 </div>
 
@@ -136,7 +139,30 @@
     background: var(--paper);
     color: var(--ink);
     box-shadow: var(--shadow-sheet);
-    border-left: 4px solid var(--heart);
+    border-left: 4px solid var(--ice-strong);
     font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+  }
+  .toast.error {
+    border-left-color: var(--heart);
+  }
+  .toast-icon {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--ice-strong);
+    color: white;
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 0.95rem;
+    line-height: 1;
+  }
+  .toast.error .toast-icon {
+    background: var(--heart);
   }
 </style>

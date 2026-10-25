@@ -360,7 +360,7 @@
     // A rejected play: say why, and let any card be tapped again.
     stopPlayErrors = registerErrorHandler('play_card_error', (message) => {
       playInFlight.set(false);
-      showToast(message);
+      showToast(message, 'error');
     });
   });
 

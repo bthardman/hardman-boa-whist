@@ -258,8 +258,8 @@
 
   const cleanups: Array<() => void> = [];
   onMount(() => {
-    cleanups.push(registerErrorHandler('start_game_error', (m) => showToast(m)));
-    cleanups.push(registerErrorHandler('avatar_selection_error', (m) => showToast(m)));
+    cleanups.push(registerErrorHandler('start_game_error', (m) => showToast(m, 'error')));
+    cleanups.push(registerErrorHandler('avatar_selection_error', (m) => showToast(m, 'error')));
   });
 
   onDestroy(() => {
@@ -283,7 +283,7 @@
         aria-label="Tap the logo to start"
       >
         <img
-          src="/logo/logo.png"
+          src="/logo/logo.webp"
           alt="Hardman Boa-Whist"
           class="intro-pending-logo"
           class:shrink={introStage === 'pending_shrink'}
@@ -305,13 +305,13 @@
           </div>
         {/each}
       </div>
-      <img src="/logo/logo.png" alt="" class="intro-logo" />
+      <img src="/logo/logo.webp" alt="" class="intro-logo" />
     </div>
   {/if}
 
   <div class="scroll">
     <header class="brand" class:hidden={chromeHidden}>
-      <img src="/logo/logo.png" alt="Hardman Boa-Whist" />
+      <img src="/logo/logo.webp" alt="Hardman Boa-Whist" />
     </header>
 
     <main class="seats" class:hidden={seatsHidden} aria-labelledby="seats-title">

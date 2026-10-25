@@ -77,7 +77,7 @@ export function setupSocketHandlers() {
     socket.on(event, (data: { message: string }) => {
       const handlers = errorHandlers.get(event);
       if (handlers && handlers.size > 0) handlers.forEach((h) => h(data.message));
-      else showToast(data.message);
+      else showToast(data.message, 'error');
     });
   }
 

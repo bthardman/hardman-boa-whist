@@ -10,7 +10,7 @@ import { calculateRoundScores, checkGameEnd, checkRoundEnd, findGameWinner, upda
 import { isValidBid } from './utils/biddingRules.ts';
 import { broadcastState, notifyRoom } from './view.ts';
 import { moveSoloGameToPrivateTable } from './tables.ts';
-import { emptyTally, reportFinishedGame, tallyRound } from './stats.ts';
+import { emptyTally, reportFinishedGame, tallyRound, tallyTrick } from './stats.ts';
 
 /** A game is under way (cards dealt and not yet won). */
 export function isActive(room: GameState): boolean {
@@ -251,6 +251,7 @@ export function applyPlay(ctx: Ctx, room: GameState, playerIndex: number, cardId
   // Trick complete: award it, then let everyone see the cards briefly before clearing.
   const winnerIndex = calculateTrickWinner(room.currentTrick, room.players);
   if (winnerIndex !== -1) {
+    tallyTrick(ctx, room, room.currentTrick, winnerIndex);
     (room.completedTricks ??= []).push({ winnerId: room.players[winnerIndex].playerId, cards: room.currentTrick.slice() });
     room.players[winnerIndex].tricksWon++;
     room.currentPlayer = winnerIndex;

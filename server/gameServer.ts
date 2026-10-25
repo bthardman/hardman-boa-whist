@@ -10,6 +10,7 @@ import { createContext, type Ctx, type Timings } from './context.ts';
 import { registerSocketHandlers } from './handlers.ts';
 import { allowedOriginsFrom, originChecker } from './origins.ts';
 import { httpGameReporter } from './stats.ts';
+import { httpSettingsStore, loadTableSettings, type SettingsStore } from './settings.ts';
 import type { GameRecord } from '../shared/stats.ts';
 
 export type GameServerOptions = Partial<Timings> & {
@@ -22,6 +23,8 @@ export type GameServerOptions = Partial<Timings> & {
   statsSecret?: string;
   /** Instead of statsUrl/statsSecret: receive finished games directly (used by tests). */
   reportGame?: (record: GameRecord) => void;
+  /** Instead of statsUrl/statsSecret: where the family table's settings are kept (used by tests). */
+  settingsStore?: SettingsStore;
 };
 
 export type GameServer = {
@@ -34,7 +37,7 @@ export type GameServer = {
 };
 
 export function createGameServer(options: GameServerOptions = {}): GameServer {
-  const { corsOrigins, distPath: distOption, statsUrl, statsSecret, reportGame, ...timings } = options;
+  const { corsOrigins, distPath: distOption, statsUrl, statsSecret, reportGame, settingsStore, ...timings } = options;
   const isAllowedOrigin = originChecker(allowedOriginsFrom(corsOrigins));
   const distPath = distOption ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist');
 
@@ -57,6 +60,8 @@ export function createGameServer(options: GameServerOptions = {}): GameServer {
   });
   const ctx = createContext(io, timings);
   ctx.reportGame = reportGame ?? (statsUrl && statsSecret ? httpGameReporter(statsUrl, statsSecret, ctx.setTimer) : undefined);
+  ctx.settingsStore = settingsStore ?? (statsUrl && statsSecret ? httpSettingsStore(statsUrl, statsSecret) : undefined);
+  void loadTableSettings(ctx);
 
   // A tiny "are you awake?" check. The front end calls /awake to wake a sleeping free-tier server
   // (ad blockers sometimes block "/health"); Render uses /health as its health check.
@@ -86,7 +91,18 @@ export function createGameServer(options: GameServerOptions = {}): GameServer {
   });
 
   // Serve the built front end when available (the Render address still works as a fallback).
-  app.use(express.static(distPath));
+  // Same caching as public/_headers on Cloudflare: the app's renamed-on-change files for a year,
+  // pictures and fonts for a day, and the page itself always checked.
+  app.use(
+    express.static(distPath, {
+      setHeaders(res, filePath) {
+        const file = filePath.replace(/\\/g, '/');
+        if (file.includes('/assets/')) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        else if (/\/(avatars|cards|logo|icons|fonts)\//.test(file)) res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+        else res.setHeader('Cache-Control', 'no-cache');
+      }
+    })
+  );
   app.get(/^(?!\/socket\.io).*/, (_req, res) => {
     res.sendFile(path.join(distPath, 'index.html'));
   });

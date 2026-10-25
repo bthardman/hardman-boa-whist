@@ -76,7 +76,7 @@
           </div>
         {/each}
       </div>
-      <img class="logo" src="/logo/logo.png" alt="Hardman Boa-Whist" />
+      <img class="logo" src="/logo/logo.webp" alt="Hardman Boa-Whist" />
     </div>
 
     {#if unreachable}
